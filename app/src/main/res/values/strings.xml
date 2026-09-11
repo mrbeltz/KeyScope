@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">KeyScope</string>
+    <string name="channel_name">Listening</string>
+    <string name="channel_desc">Shown while KeyScope is analysing the microphone.</string>
+</resources>

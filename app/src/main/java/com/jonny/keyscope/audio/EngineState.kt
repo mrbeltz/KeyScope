@@ -1,0 +1,43 @@
+package com.jonny.keyscope.audio
+
+import com.jonny.keyscope.MusicalKey
+import com.jonny.keyscope.dsp.KeyProfile
+
+/** How much audio the key estimate is averaged over. */
+enum class AnalysisWindow(val label: String, val seconds: Int) {
+    FAST("Fast", 6),
+    NORMAL("Normal", 14),
+    DEEP("Deep", 30)
+}
+
+data class HistoryEntry(
+    val key: MusicalKey,
+    val atMillis: Long,
+    val bpm: Float,
+    val confidence: Float
+)
+
+data class EngineState(
+    val listening: Boolean = false,
+    val key: MusicalKey? = null,
+    /** 0..1 -- how much the winning key beats everything else. */
+    val confidence: Float = 0f,
+    /** True once the same key has held steady long enough to be worth acting on. */
+    val locked: Boolean = false,
+    val alternates: List<Pair<MusicalKey, Float>> = emptyList(),
+    val chroma: List<Float> = List(12) { 0f },
+    /** Reference-tuning offset from A=440, in cents. */
+    val tuningCents: Float = 0f,
+    val bpm: Float = 0f,
+    val bpmConfidence: Float = 0f,
+    /** 0..1 -- how full the analysis window is. */
+    val windowFill: Float = 0f,
+    val silent: Boolean = true,
+    val window: AnalysisWindow = AnalysisWindow.NORMAL,
+    val profile: KeyProfile = KeyProfile.SHAATH,
+    val inputSource: String = "",
+    val history: List<HistoryEntry> = emptyList(),
+    val error: String? = null
+) {
+    val referenceHz: Float get() = (440.0 * Math.pow(2.0, tuningCents / 1200.0)).toFloat()
+}
