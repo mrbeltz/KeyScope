@@ -104,7 +104,34 @@ class DspTest {
         )
         val cents = tuningOf(signal)
         // 1200 * log2(432/440) is about -31.8 cents.
-        assertTrue("estimated $cents cents", abs(cents + 31.8f) < 9f)
+        assertTrue("estimated $cents cents, expected about -31.8", abs(cents + 31.8f) < 9f)
+    }
+
+    @Test
+    fun `estimates a sharp reference tuning`() {
+        // Pins the sign in the other direction too. Getting this backwards is silent damage:
+        // fold() would shift the chroma further off instead of correcting it.
+        val signal = render(
+            listOf(triad(60, MAJOR) to 3.0, triad(55, MAJOR) to 3.0),
+            reference = 449.0
+        )
+        val cents = tuningOf(signal)
+        // 1200 * log2(449/440) is about +35.1 cents.
+        assertTrue("estimated $cents cents, expected about +35.1", abs(cents - 35.1f) < 9f)
+    }
+
+    @Test
+    fun `a recording cut flat still lands on the right key`() {
+        val signal = render(
+            listOf(
+                triad(60, MAJOR) to 3.0,
+                triad(55, MAJOR) to 2.0,
+                triad(57, MINOR) to 2.0,
+                triad(53, MAJOR) to 2.0
+            ),
+            reference = 432.0
+        )
+        assertEquals("C major", detect(signal).name)
     }
 
     // ------------------------------------------------------------- naming

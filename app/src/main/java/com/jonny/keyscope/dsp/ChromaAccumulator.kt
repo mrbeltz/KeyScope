@@ -62,10 +62,14 @@ class ChromaAccumulator(windowFrames: Int) {
         fun estimateTuningCents(profile36: FloatArray): Float {
             var real = 0.0
             var imag = 0.0
+            // Energy for a recording sharp by d bins sits at bins 3k+d, so the conjugate kernel
+            // exp(+2*pi*i*i/3) puts +d in the phase. Negating it here inverts the correction in
+            // fold() as well, which is worse than reporting the wrong number: a record 30 cents
+            // flat would get shifted 30 cents further out instead of back.
             for (i in profile36.indices) {
                 val angle = 2.0 * PI * i / ChromaExtractor.BINS_PER_SEMITONE
                 real += profile36[i] * cos(angle)
-                imag -= profile36[i] * sin(angle)
+                imag += profile36[i] * sin(angle)
             }
             if (real == 0.0 && imag == 0.0) return 0f
             val phase = atan2(imag, real) // -pi..pi

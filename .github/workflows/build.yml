@@ -48,3 +48,10 @@ jobs:
       # Last, so a failing test turns the run red without withholding the APK.
       - name: Run DSP tests
         run: gradle test --no-daemon
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
