@@ -17,7 +17,8 @@ lock* switch in the Analysis card turns that off and keeps it re-reading as the 
 
 From the locked reading you can:
 
-- **Copy or share** it as one line: `F# minor · 11A · Open Key 4m · 128 BPM`.
+- **Copy** gives one line: `F# minor · 11A · Open Key 4m · 128 BPM`. **Share** gives the whole
+  picture — scale, chords, tempo, tuning, compatible keys and what it heard.
 - **Transpose** to a target tonic. Shows the semitone move — shortest path, so G from C reads as
   −5 rather than +7 — and the tempo a varispeed pitch drags along with it. Key lock leaves tempo
   alone, and it says so.
@@ -29,9 +30,27 @@ From the locked reading you can:
 ## For producing
 
 - **Files.** Point it at samples, loops or bounces and it runs the same pipeline with no speaker
-  and no room in between, which is simply a better reading than playing the track out loud. Batch
-  a folder and copy the lot out as CSV for a sample library. Uses the storage access framework, so
-  no storage permission is needed.
+  and no room in between, which is simply a better reading than playing the track out loud. Uses
+  the storage access framework, so no storage permission is needed. Each result carries a chord
+  timeline and a key per twenty second segment, so a modulation shows up instead of being averaged
+  away. Chords get their own 372 ms frame here rather than borrowing the key path's 743 ms window,
+  which is why they are markedly better on files than live.
+- **Folders, and renaming.** Pick a folder and it analyses everything audio inside, then offers to
+  rename each file with what it found: `Loop_01.wav` becomes `Loop_01 Am 128.wav`. This is the only
+  thing in the app that changes files you already had, so it never happens on one tap — the full
+  before-and-after list is shown and has to be confirmed, the tag is appended so nothing of the
+  original name is lost, and an already-tagged file is skipped rather than having a second suffix
+  stacked on it.
+- **Links.** Paste a YouTube link and the official embed plays it out loud while the mic reads it
+  back. Nothing is downloaded — extracting audio from YouTube is against their terms — so this
+  goes through a speaker and a room and is correspondingly less certain than the file path. Use
+  files for anything you already have.
+- **MIDI out.** A file's chord timeline, or any suggested progression, as a `.mid` at the right
+  tempo. Files leave through a `FileProvider`, which is what puts Quick Share in the system sheet
+  alongside everything else.
+- **CSV out.** The whole batch as `file,key,camelot,openkey,bpm,tuning_cents,confidence,seconds`.
+  Saving goes through the document picker, so Google Drive is a destination with no sign-in and no
+  Drive API.
 - **Project target.** Set the key and tempo you are working in, once, and it persists. Every
   reading then answers whether it fits and what the move is, rather than leaving you to work it
   out from the transpose card.
@@ -150,12 +169,12 @@ Everything worth adjusting is a constant near the top of its file:
 - **Internal audio capture.** `AudioPlaybackCaptureConfiguration` plus a `MediaProjection` consent
   prompt would let it analyse audio playing on the phone itself, for apps that allow capture. Many
   music apps set `ALLOW_CAPTURE_BY_NONE`, so it works for some sources and not others.
-- **MIDI export.** Writing the detected scale or chord progression as a `.mid` would let a reading
-  end up in a DAW rather than in your head. The file format is simple enough to hand-write.
-- **Chords over files.** Chord detection is live-only today; running it over a decoded file would
-  give a whole timeline instead of a rolling eight.
-- **Shorter window for chords.** They currently share the key path's 743 ms frame, which is the
-  main thing limiting their accuracy. A second, shorter FFT would cost little and help a lot.
+- **Shorter window for live chords.** Files got their own 372 ms frame; the live path still shares
+  the key path's 743 ms window, which is the main thing limiting it.
+- **Persisting file results.** The batch list dies with the process. Keeping it would make a
+  sample library searchable rather than a single sitting.
+- **Line input.** `AudioRecord.setPreferredDevice` could target a USB interface instead of the
+  built-in mic, which would be close to file quality but live.
 
 ## Layout
 
