@@ -1149,26 +1149,63 @@ private fun LinkCard(
             return@SectionCard
         }
 
+        var status by remember(videoId) { mutableStateOf<PlayerStatus>(PlayerStatus.Loading) }
+        var playRequest by remember(videoId) { mutableStateOf(0) }
+
         YouTubePlayer(
             videoId = videoId,
+            playRequest = playRequest,
+            onStatus = { status = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(10.dp))
         )
+
         Spacer(Modifier.height(10.dp))
+
+        val failure = status as? PlayerStatus.Failed
+        if (failure != null) {
+            Text(
+                failure.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+            TextButton(onClick = onClear) { Text("Try another link") }
+            return@SectionCard
+        }
+
+        // Playing but silent to the mic is a different problem from a quiet room, and the fix is
+        // different too, so it gets its own message.
+        val playingButUnheard = status == PlayerStatus.Playing && state.silent
         Text(
             when {
+                status == PlayerStatus.Loading -> "Loading the player…"
+                status == PlayerStatus.Buffering -> "Buffering…"
+                status == PlayerStatus.Paused -> "Paused."
+                status == PlayerStatus.Ended -> "Finished."
+                playingButUnheard ->
+                    "Playing, but nothing is reaching the mic. Turn the media volume up, and check " +
+                        "the phone is not silenced or routed to headphones."
                 !state.listening && state.autoStopped -> "Locked — the readout above is the answer."
-                state.silent -> "Turn the volume up; nothing is reaching the mic."
                 state.locked -> "Locked."
-                else -> "Listening… keep the speaker up and give it a few seconds."
+                else -> "Listening… give it a few seconds."
             },
             style = MaterialTheme.typography.bodySmall,
-            color = if (state.silent) MaterialTheme.colorScheme.tertiary
+            color = if (playingButUnheard) MaterialTheme.colorScheme.error
             else MaterialTheme.colorScheme.onSurfaceVariant
         )
-        TextButton(onClick = onClear) { Text("Different link") }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { playRequest++ }) { Text("Play with sound") }
+            TextButton(onClick = onClear) { Text("Different link") }
+        }
+        Text(
+            "Autoplay is never allowed to make sound on its own, so the player is told to unmute. " +
+                "If it is still silent, that button is a real tap and always is allowed.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
