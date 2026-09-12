@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
                 // Saving also goes through the picker, which is what makes Drive a destination
                 // without the app needing a Google sign-in or any Drive API at all.
                 var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
+                var linkVideoId by remember { mutableStateOf<String?>(null) }
                 val writeResult: (android.net.Uri?) -> Unit = { uri ->
                     val bytes = pendingSave
                     pendingSave = null
@@ -212,6 +213,19 @@ class MainActivity : ComponentActivity() {
                             midiSaver.launch(Exports.baseName(result.name) + " chords.mid")
                         }
                     },
+                    playLink = { id ->
+                        // The embed plays out loud and the mic reads it back, so anything else
+                        // coming out of the speaker has to stop first.
+                        ReferenceTone.stop()
+                        Metronome.stop()
+                        linkVideoId = id
+                        KeyScopeEngine.resetAnalysis()
+                        ListeningService.start(context)
+                    },
+                    clearLink = {
+                        linkVideoId = null
+                        ListeningService.stop(context)
+                    },
                     shareProgressionMidi = { progression ->
                         val key = state.key
                         if (key != null) {
@@ -262,6 +276,7 @@ class MainActivity : ComponentActivity() {
                     tonePlaying = tonePlaying,
                     metronomeRunning = metronomeRunning,
                     files = files,
+                    linkVideoId = linkVideoId,
                     actions = actions
                 )
             }

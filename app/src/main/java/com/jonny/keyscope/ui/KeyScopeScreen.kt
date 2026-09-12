@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -54,6 +55,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -88,6 +90,7 @@ import com.jonny.keyscope.audio.FileAnalyzer
 import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.HistoryEntry
 import com.jonny.keyscope.audio.Project
+import com.jonny.keyscope.audio.YouTubeLink
 import com.jonny.keyscope.dsp.KeyProfile
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -122,7 +125,9 @@ class KeyScopeActions(
     val shareResult: (FileAnalyzer.Result) -> Unit,
     val shareMidi: (FileAnalyzer.Result) -> Unit,
     val saveMidi: (FileAnalyzer.Result) -> Unit,
-    val shareProgressionMidi: (Progression) -> Unit
+    val shareProgressionMidi: (Progression) -> Unit,
+    val playLink: (String) -> Unit,
+    val clearLink: () -> Unit
 )
 
 @Composable
@@ -134,6 +139,7 @@ fun KeyScopeScreen(
     tonePlaying: Boolean,
     metronomeRunning: Boolean,
     files: FileAnalysisController.State,
+    linkVideoId: String?,
     actions: KeyScopeActions
 ) {
     var transposeTarget by remember(state.key) { mutableStateOf<Int?>(null) }
@@ -182,6 +188,7 @@ fun KeyScopeScreen(
                             ) {
                                 ChromaCard(state)
                                 TempoCard(state, project, metronomeRunning, actions)
+                                LinkCard(state, linkVideoId, hasPermission, actions.playLink, actions.clearLink)
                                 FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
@@ -210,6 +217,7 @@ fun KeyScopeScreen(
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state, project, metronomeRunning, actions)
+                            LinkCard(state, linkVideoId, hasPermission, actions.playLink, actions.clearLink)
                             FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
@@ -1059,6 +1067,98 @@ private fun TonicPicker(selected: Int?, onSelect: (Int) -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * Paste a YouTube link, play it out loud, read it with the mic.
+ *
+ * This is the only route that stays inside YouTube's terms — nothing is downloaded or extracted.
+ * It costs real accuracy against the file path because the signal goes through a speaker and a
+ * room on the way, so the card says as much rather than pretending otherwise.
+ */
+@Composable
+private fun LinkCard(
+    state: EngineState,
+    videoId: String?,
+    hasPermission: Boolean,
+    onPlay: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    var field by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    SectionCard("Link") {
+        if (videoId == null) {
+            Text(
+                "Paste a YouTube link and Key Bro will play it and listen to it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = field,
+                onValueChange = { field = it; error = null },
+                label = { Text("YouTube link") },
+                singleLine = true,
+                isError = error != null,
+                modifier = Modifier.fillMaxWidth()
+            )
+            error?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = {
+                        val id = YouTubeLink.extractVideoId(field)
+                        if (id == null) {
+                            error = "That does not look like a YouTube link."
+                        } else {
+                            field = ""
+                            onPlay(id)
+                        }
+                    },
+                    enabled = field.isNotBlank() && hasPermission
+                ) { Text("Play and read") }
+                if (!hasPermission) {
+                    Text(
+                        "Needs the microphone first.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Through a speaker and back in through the mic, so expect it to be less certain " +
+                    "than the same track as a file. Nothing is downloaded.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@SectionCard
+        }
+
+        YouTubePlayer(
+            videoId = videoId,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(10.dp))
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            when {
+                !state.listening && state.autoStopped -> "Locked — the readout above is the answer."
+                state.silent -> "Turn the volume up; nothing is reaching the mic."
+                state.locked -> "Locked."
+                else -> "Listening… keep the speaker up and give it a few seconds."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (state.silent) MaterialTheme.colorScheme.tertiary
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        TextButton(onClick = onClear) { Text("Different link") }
     }
 }
 
