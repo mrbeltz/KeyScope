@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lock
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -71,10 +74,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jonny.keyscope.Mode
+import com.jonny.keyscope.Progression
+import com.jonny.keyscope.Progressions
+import com.jonny.keyscope.TapTempo
 import com.jonny.keyscope.MusicalKey
 import com.jonny.keyscope.audio.AnalysisWindow
 import com.jonny.keyscope.audio.EngineState
 import com.jonny.keyscope.audio.HistoryEntry
+import com.jonny.keyscope.audio.Project
 import com.jonny.keyscope.dsp.KeyProfile
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -85,26 +92,37 @@ import kotlin.math.roundToInt
 
 private const val TWO_PANE_WIDTH_DP = 720
 
+/** Everything the screen can ask the app to do, bundled so the signature stays readable. */
+class KeyScopeActions(
+    val toggleListening: () -> Unit,
+    val reset: () -> Unit,
+    val setWindow: (AnalysisWindow) -> Unit,
+    val setProfile: (KeyProfile) -> Unit,
+    val setContinuous: (Boolean) -> Unit,
+    val clearHistory: () -> Unit,
+    val copy: () -> Unit,
+    val share: () -> Unit,
+    val toggleTone: () -> Unit,
+    val playScale: () -> Unit,
+    val playProgression: (Progression) -> Unit,
+    val setProjectKey: (MusicalKey?) -> Unit,
+    val setProjectBpm: (Float) -> Unit,
+    val toggleMetronome: (Float) -> Unit
+)
+
 @Composable
 fun KeyScopeScreen(
     state: EngineState,
     level: Float,
     hasPermission: Boolean,
-    onToggleListening: () -> Unit,
-    onReset: () -> Unit,
-    onWindowChange: (AnalysisWindow) -> Unit,
-    onProfileChange: (KeyProfile) -> Unit,
-    onContinuousChange: (Boolean) -> Unit,
-    onClearHistory: () -> Unit,
+    project: Project,
     tonePlaying: Boolean,
-    onCopy: () -> Unit,
-    onShare: () -> Unit,
-    onToneToggle: () -> Unit,
-    onPlayScale: () -> Unit
+    metronomeRunning: Boolean,
+    actions: KeyScopeActions
 ) {
     var transposeTarget by remember(state.key) { mutableStateOf<Int?>(null) }
-    val actions: @Composable () -> Unit = {
-        ResultActions(state, tonePlaying, onCopy, onShare, onToneToggle, onPlayScale)
+    val resultActions: @Composable () -> Unit = {
+        ResultActions(state, tonePlaying, actions.copy, actions.share, actions.toggleTone, actions.playScale)
     }
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(
@@ -131,9 +149,11 @@ fun KeyScopeScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 KeyHeroCard(state, hasPermission)
-                                actions()
+                                resultActions()
+                                ProjectFitCard(state, project, actions)
                                 ScaleCard(state.key)
                                 ChordsCard(state.key)
+                                ProgressionsCard(state.key, actions.playProgression)
                                 CompatibleCard(state.key)
                                 TransposeCard(state, transposeTarget) { transposeTarget = it }
                             }
@@ -144,9 +164,9 @@ fun KeyScopeScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 ChromaCard(state)
-                                TempoCard(state)
-                                ControlsCard(state, onReset, onWindowChange, onProfileChange, onContinuousChange)
-                                HistoryCard(state.history, onClearHistory)
+                                TempoCard(state, project, metronomeRunning, actions)
+                                ControlsCard(state, actions)
+                                HistoryCard(state.history, actions.clearHistory)
                                 Spacer(Modifier.height(88.dp))
                             }
                         }
@@ -158,15 +178,17 @@ fun KeyScopeScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             KeyHeroCard(state, hasPermission)
-                            actions()
+                            resultActions()
+                            ProjectFitCard(state, project, actions)
                             ChromaCard(state)
                             ScaleCard(state.key)
                             ChordsCard(state.key)
+                                ProgressionsCard(state.key, actions.playProgression)
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
-                            TempoCard(state)
-                            ControlsCard(state, onReset, onWindowChange, onProfileChange, onContinuousChange)
-                            HistoryCard(state.history, onClearHistory)
+                            TempoCard(state, project, metronomeRunning, actions)
+                            ControlsCard(state, actions)
+                            HistoryCard(state.history, actions.clearHistory)
                             Spacer(Modifier.height(96.dp))
                         }
                     }
@@ -178,7 +200,7 @@ fun KeyScopeScreen(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(bottom = 20.dp),
-                    onClick = onToggleListening
+                    onClick = actions.toggleListening
                 )
             }
         }
@@ -405,16 +427,16 @@ private fun ResultActions(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        ActionButton(Icons.Filled.ContentCopy, "Copy", Modifier.weight(1f), onCopy)
-        ActionButton(Icons.Filled.Share, "Share", Modifier.weight(1f), onShare)
+        ActionButton(Icons.Filled.ContentCopy, "Copy", Modifier.weight(1f), onClick = onCopy)
+        ActionButton(Icons.Filled.Share, "Share", Modifier.weight(1f), onClick = onShare)
         ActionButton(
             if (tonePlaying) Icons.Filled.StopCircle else Icons.Filled.VolumeUp,
             if (tonePlaying) "Stop" else "Tonic",
             Modifier.weight(1f),
-            onToneToggle,
-            highlighted = tonePlaying
+            highlighted = tonePlaying,
+            onClick = onToneToggle
         )
-        ActionButton(Icons.Filled.PlayArrow, "Scale", Modifier.weight(1f), onPlayScale)
+        ActionButton(Icons.Filled.PlayArrow, "Scale", Modifier.weight(1f), onClick = onPlayScale)
     }
     if (state.listening) {
         Spacer(Modifier.height(6.dp))
@@ -431,8 +453,8 @@ private fun ActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     modifier: Modifier,
-    onClick: () -> Unit,
-    highlighted: Boolean = false
+    highlighted: Boolean = false,
+    onClick: () -> Unit
 ) {
     val tint = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Column(
@@ -799,7 +821,16 @@ private fun CompatibleCard(key: MusicalKey?) {
 // ------------------------------------------------------------------ tempo / controls / history
 
 @Composable
-private fun TempoCard(state: EngineState) {
+private fun TempoCard(
+    state: EngineState,
+    project: Project,
+    metronomeRunning: Boolean,
+    actions: KeyScopeActions
+) {
+    val tapper = remember { TapTempo() }
+    var tapped by remember { mutableStateOf(0f) }
+    val effective = if (tapped > 0f) tapped else state.bpm
+
     SectionCard("Tempo") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -815,23 +846,240 @@ private fun TempoCard(state: EngineState) {
                 LabeledBar("Certainty", state.bpmConfidence, MaterialTheme.colorScheme.tertiary)
             }
         }
+
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            ActionButton(Icons.Filled.TouchApp, "Tap", Modifier.weight(1f)) {
+                tapper.tap()?.let { tapped = it }
+            }
+            ActionButton(
+                if (metronomeRunning) Icons.Filled.StopCircle else Icons.Filled.Timer,
+                if (metronomeRunning) "Stop" else "Click",
+                Modifier.weight(1f),
+                highlighted = metronomeRunning
+            ) { actions.toggleMetronome(effective) }
+            ActionButton(Icons.Filled.Album, "To project", Modifier.weight(1f)) {
+                if (effective > 0f) actions.setProjectBpm(effective)
+            }
+        }
+
+        if (tapped > 0f) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Tapped ${String.format(Locale.US, "%.1f", tapped)} BPM" +
+                    when {
+                        state.bpm <= 0f -> ""
+                        TapTempo.isSameTempo(tapped, state.bpm) -> " — agrees with the detector."
+                        TapTempo.isOctaveOf(tapped, state.bpm) ->
+                            " — same tempo as the detector, an octave apart. Yours is the right one."
+                        else -> " — the detector disagrees, so trust your taps."
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+            TextButton(onClick = { tapper.reset(); tapped = 0f }) { Text("Clear taps") }
+        }
+
         Spacer(Modifier.height(6.dp))
         Text(
-            "Onset autocorrelation over the last 12 seconds. Half or double time is the usual failure mode.",
+            if (project.bpm > 0f && effective > 0f) {
+                val drift = (effective / project.bpm - 1f) * 100f
+                "Project sits at ${String.format(Locale.US, "%.1f", project.bpm)} BPM — " +
+                    "this is ${formatSigned(drift)}% off it."
+            } else {
+                "Onset autocorrelation over the last 12 seconds. Half or double time is the usual failure mode, which is what the tap button is for."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
+/**
+ * Whether the thing you just heard fits what you are working on, and what it takes to make it.
+ * The transpose maths already existed; this just answers the question without being asked.
+ */
 @Composable
-private fun ControlsCard(
-    state: EngineState,
-    onReset: () -> Unit,
-    onWindowChange: (AnalysisWindow) -> Unit,
-    onProfileChange: (KeyProfile) -> Unit,
-    onContinuousChange: (Boolean) -> Unit
-) {
+private fun ProjectFitCard(state: EngineState, project: Project, actions: KeyScopeActions) {
+    var editing by remember { mutableStateOf(false) }
+
+    SectionCard("Project") {
+        if (!project.isSet && !editing) {
+            Text(
+                "Set the key and tempo you are working in, and every reading will tell you whether it fits.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { editing = true }) { Text("Set project key") }
+            return@SectionCard
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    project.key?.name ?: "No key set",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    if (project.bpm > 0f) {
+                        "${String.format(Locale.US, "%.1f", project.bpm)} BPM" +
+                            (project.key?.let { "  ·  ${it.camelot}" } ?: "")
+                    } else {
+                        "No tempo set"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            TextButton(onClick = { editing = !editing }) { Text(if (editing) "Done" else "Change") }
+        }
+
+        if (editing) {
+            Spacer(Modifier.height(10.dp))
+            TonicPicker(
+                selected = project.key?.tonic,
+                onSelect = { pc ->
+                    val mode = project.key?.mode ?: Mode.MINOR
+                    actions.setProjectKey(if (project.key?.tonic == pc) null else MusicalKey(pc, mode))
+                }
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Mode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = project.key?.mode == mode,
+                        onClick = {
+                            val tonic = project.key?.tonic ?: state.key?.tonic ?: 0
+                            actions.setProjectKey(MusicalKey(tonic, mode))
+                        },
+                        label = { Text(if (mode == Mode.MAJOR) "Major" else "Minor") }
+                    )
+                }
+                state.key?.let { detected ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { actions.setProjectKey(detected) },
+                        label = { Text("Use ${detected.shortName}") }
+                    )
+                }
+            }
+            if (project.isSet) {
+                TextButton(onClick = {
+                    actions.setProjectKey(null)
+                    actions.setProjectBpm(0f)
+                    editing = false
+                }) { Text("Clear project") }
+            }
+        }
+
+        val detected = state.key
+        val target = project.key
+        if (detected != null && target != null) {
+            Spacer(Modifier.height(14.dp))
+            val semitones = detected.semitonesTo(target)
+            val percent = detected.varispeedPercentTo(target)
+            val fits = semitones == 0
+            val close = detected.compatible.contains(target)
+
+            Text(
+                when {
+                    fits -> "Already in your project key."
+                    close -> "Not your key, but it mixes with it — ${detected.shortName} sits next to ${target.shortName} on the wheel."
+                    else -> "Pitch ${if (semitones > 0) "+$semitones" else "$semitones"} to land in ${target.shortName}."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (fits || close) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            if (!fits) {
+                Text(
+                    "Varispeed would take it ${formatSigned(percent)}%" +
+                        if (state.bpm > 0f) {
+                            " to ${String.format(Locale.US, "%.1f", state.bpm * (1f + percent / 100f))} BPM."
+                        } else ".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TonicPicker(selected: Int?, onSelect: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        for (pc in 0 until 12) {
+            val on = selected == pc
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(
+                        if (on) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .clickable { onSelect(pc) }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    MusicalKey.CHROMA_LABELS[pc],
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    color = if (on) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+/** Common progressions spelled into the detected key, auditionable through the tone engine. */
+@Composable
+private fun ProgressionsCard(key: MusicalKey?, onPlay: (Progression) -> Unit) {
+    SectionCard("Progressions in this key") {
+        if (key == null) {
+            Text(
+                "Once a key is detected, common progressions will be spelled out here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@SectionCard
+        }
+        Progressions.forKey(key).forEach { progression ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(9.dp))
+                    .clickable { onPlay(progression) }
+                    .padding(vertical = 9.dp, horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        progression.chordNames(key).joinToString("  ·  "),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        "${progression.name}   ${progression.numerals(key)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ControlsCard(state: EngineState, actions: KeyScopeActions) {
     SectionCard("Analysis") {
         Row(
             Modifier.fillMaxWidth(),
@@ -850,7 +1098,7 @@ private fun ControlsCard(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            Switch(checked = state.continuousListening, onCheckedChange = onContinuousChange)
+            Switch(checked = state.continuousListening, onCheckedChange = actions.setContinuous)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -860,7 +1108,7 @@ private fun ControlsCard(
             AnalysisWindow.entries.forEach { window ->
                 FilterChip(
                     selected = state.window == window,
-                    onClick = { onWindowChange(window) },
+                    onClick = { actions.setWindow(window) },
                     label = { Text("${window.label} - ${window.seconds}s") },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
@@ -876,7 +1124,7 @@ private fun ControlsCard(
             KeyProfile.entries.forEach { profile ->
                 FilterChip(
                     selected = state.profile == profile,
-                    onClick = { onProfileChange(profile) },
+                    onClick = { actions.setProfile(profile) },
                     label = { Text(profile.label) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
@@ -892,7 +1140,7 @@ private fun ControlsCard(
         )
 
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = onReset) {
+        TextButton(onClick = actions.reset) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Clear the average and restart")

@@ -24,7 +24,10 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jonny.keyscope.audio.KeyScopeEngine
 import com.jonny.keyscope.audio.ListeningService
+import com.jonny.keyscope.audio.Metronome
+import com.jonny.keyscope.audio.ProjectSettings
 import com.jonny.keyscope.audio.ReferenceTone
+import com.jonny.keyscope.ui.KeyScopeActions
 import com.jonny.keyscope.ui.KeyScopeScreen
 import com.jonny.keyscope.ui.KeyScopeTheme
 
@@ -33,6 +36,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        ProjectSettings.init(this)
 
         setContent {
             KeyScopeTheme {
@@ -40,6 +44,8 @@ class MainActivity : ComponentActivity() {
                 val state by KeyScopeEngine.state.collectAsStateWithLifecycle()
                 val level by KeyScopeEngine.level.collectAsStateWithLifecycle()
                 val tonePlaying by ReferenceTone.playing.collectAsStateWithLifecycle()
+                val metronomeRunning by Metronome.running.collectAsStateWithLifecycle()
+                val project by ProjectSettings.state.collectAsStateWithLifecycle()
 
                 var hasPermission by remember {
                     mutableStateOf(
@@ -70,11 +76,8 @@ class MainActivity : ComponentActivity() {
                     onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
                 }
 
-                KeyScopeScreen(
-                    state = state,
-                    level = level,
-                    hasPermission = hasPermission,
-                    onToggleListening = {
+                val actions = KeyScopeActions(
+                    toggleListening = {
                         when {
                             state.listening -> ListeningService.stop(context)
                             !hasPermission -> micLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -86,9 +89,10 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
-                                // A tone playing into an open mic is a feedback loop that would
-                                // poison its own reading.
+                                // Anything coming out of the speaker feeds straight back into an
+                                // open mic and poisons its own reading.
                                 ReferenceTone.stop()
+                                Metronome.stop()
                                 // Starting by hand always means "read this fresh", never "resume
                                 // the average from whatever was in the room a minute ago".
                                 KeyScopeEngine.resetAnalysis()
@@ -96,13 +100,29 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
-                    onReset = KeyScopeEngine::resetAnalysis,
-                    onWindowChange = KeyScopeEngine::setWindow,
-                    onProfileChange = KeyScopeEngine::setProfile,
-                    onContinuousChange = KeyScopeEngine::setContinuous,
-                    onClearHistory = KeyScopeEngine::clearHistory,
-                    tonePlaying = tonePlaying,
-                    onCopy = {
+                    reset = KeyScopeEngine::resetAnalysis,
+                    setWindow = KeyScopeEngine::setWindow,
+                    setProfile = KeyScopeEngine::setProfile,
+                    setContinuous = KeyScopeEngine::setContinuous,
+                    clearHistory = KeyScopeEngine::clearHistory,
+                    setProjectKey = ProjectSettings::setKey,
+                    setProjectBpm = ProjectSettings::setBpm,
+                    toggleMetronome = { bpm ->
+                        if (metronomeRunning) Metronome.stop() else if (bpm > 0f) {
+                            ReferenceTone.stop()
+                            Metronome.start(bpm)
+                        }
+                    },
+                    playProgression = { progression ->
+                        val key = state.key
+                        if (key != null) {
+                            Metronome.stop()
+                            ReferenceTone.playChords(
+                                Progressions.voicing(key, progression, state.referenceHz)
+                            )
+                        }
+                    },
+                    copy = {
                         val clipboard = context.getSystemService(ClipboardManager::class.java)
                         clipboard.setPrimaryClip(ClipData.newPlainText("Key", state.summaryLine))
                         // Android 13 and up shows its own copy confirmation, so do not double up.
@@ -110,24 +130,25 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    onShare = {
+                    share = {
                         val share = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, state.summaryLine)
                         }
                         context.startActivity(Intent.createChooser(share, null))
                     },
-                    onToneToggle = {
+                    toggleTone = {
                         val key = state.key
                         if (tonePlaying || key == null) {
                             ReferenceTone.stop()
                         } else {
+                            Metronome.stop()
                             ReferenceTone.startDrone(
                                 MusicalKey.frequencyOf(key.tonic, state.referenceHz)
                             )
                         }
                     },
-                    onPlayScale = {
+                    playScale = {
                         val key = state.key
                         if (key != null) {
                             // Tonic up to tonic, so the octave closes the phrase.
@@ -140,9 +161,20 @@ class MainActivity : ComponentActivity() {
                                 MusicalKey.frequencyOf(pc, state.referenceHz) *
                                     Math.pow(2.0, octave.toDouble()).toFloat()
                             } + MusicalKey.frequencyOf(key.tonic, state.referenceHz) * 2f
+                            Metronome.stop()
                             ReferenceTone.playScale(frequencies)
                         }
                     }
+                )
+
+                KeyScopeScreen(
+                    state = state,
+                    level = level,
+                    hasPermission = hasPermission,
+                    project = project,
+                    tonePlaying = tonePlaying,
+                    metronomeRunning = metronomeRunning,
+                    actions = actions
                 )
             }
         }

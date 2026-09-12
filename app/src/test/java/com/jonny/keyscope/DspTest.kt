@@ -236,6 +236,74 @@ class DspTest {
     }
 
     @Test
+    fun `tap tempo reads the median interval`() {
+        val tapper = TapTempo()
+        var now = 10_000L
+        assertEquals(null, tapper.tap(now))
+        repeat(5) {
+            now += 500 // 120 BPM
+            tapper.tap(now)
+        }
+        val steady = tapper.tap(now + 500)!!
+        assertTrue("got $steady", abs(steady - 120f) < 0.5f)
+
+        // One late tap should not drag the answer, because the median throws it away.
+        val wobbled = tapper.tap(now + 500 + 900)!!
+        assertTrue("got $wobbled", abs(wobbled - 120f) < 6f)
+    }
+
+    @Test
+    fun `tap tempo restarts after a pause`() {
+        val tapper = TapTempo(resetAfterMs = 2000L)
+        tapper.tap(0)
+        tapper.tap(500)
+        assertEquals(2, tapper.tapCount)
+        // A long gap is a new count-in, not a very slow tempo.
+        assertEquals(null, tapper.tap(10_000))
+        assertEquals(1, tapper.tapCount)
+    }
+
+    @Test
+    fun `octave relationships between tapped and detected tempo`() {
+        assertTrue(TapTempo.isOctaveOf(140f, 70f))
+        assertTrue(TapTempo.isOctaveOf(70f, 140f))
+        assertTrue(!TapTempo.isOctaveOf(140f, 100f))
+        assertTrue(TapTempo.isSameTempo(128f, 128.4f))
+        assertTrue(!TapTempo.isSameTempo(128f, 140f))
+    }
+
+    @Test
+    fun `progressions spell into the detected key`() {
+        val cMajor = MusicalKey(0, Mode.MAJOR)
+        val pop = Progressions.forKey(cMajor).first { it.name == "Pop" }
+        assertEquals(listOf("C", "G", "Am", "F"), pop.chordNames(cMajor))
+        assertEquals("I - V - vi - IV", pop.numerals(cMajor))
+
+        val aMinor = MusicalKey(9, Mode.MINOR)
+        val epic = Progressions.forKey(aMinor).first { it.name == "Epic" }
+        assertEquals(listOf("Am", "F", "C", "G"), epic.chordNames(aMinor))
+
+        // Major and minor keys must not be offered each other's progressions.
+        assertTrue(Progressions.forKey(cMajor).none { it.name == "Epic" })
+    }
+
+    @Test
+    fun `progression voicings are playable triads`() {
+        val key = MusicalKey(6, Mode.MINOR) // F# minor
+        val progression = Progressions.forKey(key).first()
+        val voiced = Progressions.voicing(key, progression, 440f)
+
+        assertEquals(progression.degrees.size, voiced.size)
+        voiced.forEach { chord ->
+            assertEquals(3, chord.size)
+            chord.forEach { frequency ->
+                // Inside the octave the tone engine and a phone speaker can both manage.
+                assertTrue("$frequency Hz", frequency > 200f && frequency < 1100f)
+            }
+        }
+    }
+
+    @Test
     fun `relative keys are reciprocal`() {
         for (pc in 0 until 12) {
             for (mode in Mode.entries) {

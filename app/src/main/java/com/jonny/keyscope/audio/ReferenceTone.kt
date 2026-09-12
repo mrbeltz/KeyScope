@@ -33,10 +33,13 @@ object ReferenceTone {
     @Volatile private var running = false
 
     /** Holds a single note until stopped. */
-    fun startDrone(frequencyHz: Float) = start(listOf(frequencyHz), stepMs = 0)
+    fun startDrone(frequencyHz: Float) = start(listOf(listOf(frequencyHz)), stepMs = 0)
 
     /** Walks up the scale and stops, tonic to tonic. */
-    fun playScale(frequencies: List<Float>) = start(frequencies, stepMs = 340)
+    fun playScale(frequencies: List<Float>) = start(frequencies.map { listOf(it) }, stepMs = 340)
+
+    /** Sounds a progression, one chord per step. */
+    fun playChords(chords: List<List<Float>>, stepMs: Int = 700) = start(chords, stepMs)
 
     @Synchronized
     fun stop() {
@@ -47,15 +50,15 @@ object ReferenceTone {
     }
 
     @Synchronized
-    private fun start(frequencies: List<Float>, stepMs: Int) {
+    private fun start(steps: List<List<Float>>, stepMs: Int) {
         stop()
-        if (frequencies.isEmpty()) return
+        if (steps.isEmpty() || steps.all { it.isEmpty() }) return
         running = true
         _playing.value = true
-        thread = Thread({ render(frequencies, stepMs) }, "KeyScope-Tone").also { it.start() }
+        thread = Thread({ render(steps, stepMs) }, "KeyBro-Tone").also { it.start() }
     }
 
-    private fun render(frequencies: List<Float>, stepMs: Int) {
+    private fun render(steps: List<List<Float>>, stepMs: Int) {
         var track: AudioTrack? = null
         try {
             val minBuffer = AudioTrack.getMinBufferSize(
@@ -84,50 +87,64 @@ object ReferenceTone {
             val attack = SAMPLE_RATE * ATTACK_MS / 1000
             val release = SAMPLE_RATE * RELEASE_MS / 1000
 
-            // Phase carries across the note boundary and into the fade so nothing ever clicks.
-            var phase = 0.0
-            var step = 0.0
+            // One phase accumulator per voice, carried into the fade so nothing ever clicks.
+            var phases = DoubleArray(0)
+            var increments = DoubleArray(0)
+            // Chords need headroom: three voices at full level would clip on their own.
+            var gain = 0.17f
 
-            var noteIndex = 0
-            while (running && noteIndex < frequencies.size) {
-                // stepMs == 0 means hold this note until someone stops us.
-                val noteSamples = if (stepMs == 0) Int.MAX_VALUE else SAMPLE_RATE * stepMs / 1000
+            var stepIndex = 0
+            while (running && stepIndex < steps.size) {
+                val voices = steps[stepIndex].filter { it > 0f }
+                if (voices.isEmpty()) {
+                    stepIndex++
+                    continue
+                }
+                // stepMs == 0 means hold until someone stops us.
+                val stepSamples = if (stepMs == 0) Int.MAX_VALUE else SAMPLE_RATE * stepMs / 1000
                 var written = 0
-                step = 2.0 * PI * frequencies[noteIndex] / SAMPLE_RATE
 
-                while (running && written < noteSamples) {
-                    val count = min(CHUNK, noteSamples - written)
+                if (phases.size != voices.size) phases = DoubleArray(voices.size)
+                increments = DoubleArray(voices.size) { 2.0 * PI * voices[it] / SAMPLE_RATE }
+                gain = 0.17f / (1f + 0.55f * (voices.size - 1))
+
+                while (running && written < stepSamples) {
+                    val count = min(CHUNK, stepSamples - written)
                     for (i in 0 until count) {
                         var sample = 0f
-                        for (h in HARMONIC_GAINS.indices) {
-                            sample += HARMONIC_GAINS[h] * sin(phase * (h + 1)).toFloat()
+                        for (v in voices.indices) {
+                            for (h in HARMONIC_GAINS.indices) {
+                                sample += HARMONIC_GAINS[h] * sin(phases[v] * (h + 1)).toFloat()
+                            }
+                            phases[v] += increments[v]
                         }
                         val position = written + i
                         var envelope = min(1f, position.toFloat() / attack)
-                        if (noteSamples != Int.MAX_VALUE) {
-                            val remaining = noteSamples - position
+                        if (stepSamples != Int.MAX_VALUE) {
+                            val remaining = stepSamples - position
                             if (remaining < release) envelope *= remaining.toFloat() / release
                         }
-                        buffer[i] = sample * envelope * 0.17f
-                        phase += step
+                        buffer[i] = sample * envelope * gain
                     }
                     track.write(buffer, 0, count, AudioTrack.WRITE_BLOCKING)
                     written += count
                 }
-                noteIndex++
+                stepIndex++
             }
 
             // Fade out rather than cutting, so stopping a drone does not click.
             var faded = 0
-            while (step > 0.0 && faded < release) {
+            while (increments.isNotEmpty() && faded < release) {
                 val count = min(CHUNK, release - faded)
                 for (i in 0 until count) {
                     var sample = 0f
-                    for (h in HARMONIC_GAINS.indices) {
-                        sample += HARMONIC_GAINS[h] * sin(phase * (h + 1)).toFloat()
+                    for (v in increments.indices) {
+                        for (h in HARMONIC_GAINS.indices) {
+                            sample += HARMONIC_GAINS[h] * sin(phases[v] * (h + 1)).toFloat()
+                        }
+                        phases[v] += increments[v]
                     }
-                    buffer[i] = sample * (1f - (faded + i).toFloat() / release) * 0.17f
-                    phase += step
+                    buffer[i] = sample * (1f - (faded + i).toFloat() / release) * gain
                 }
                 track.write(buffer, 0, count, AudioTrack.WRITE_BLOCKING)
                 faded += count
