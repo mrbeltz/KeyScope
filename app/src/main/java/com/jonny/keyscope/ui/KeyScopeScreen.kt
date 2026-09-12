@@ -204,15 +204,14 @@ fun KeyScopeScreen(
                                     actions.shareCaptureMelody, actions.saveCaptureMelody
                                 )
                                 FilesCard(
-                                files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
-                                actions.shareCsv, actions.clearFiles, actions.setProjectKey,
-                                actions.shareResult, actions.shareMidi, actions.saveMidi,
-                                actions.pickFolder, renamePlan, actions.previewRenames,
-                                actions.applyRenames, actions.cancelRenames
-                            )
+                                    files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
+                                    actions.shareCsv, actions.clearFiles, actions.setProjectKey,
+                                    actions.shareResult, actions.shareMidi, actions.saveMidi,
+                                    actions.pickFolder, renamePlan, actions.previewRenames,
+                                    actions.applyRenames, actions.cancelRenames
+                                )
                                 ControlsCard(state, actions)
                                 HistoryCard(state.history, actions.clearHistory)
-                                Spacer(Modifier.height(88.dp))
                             }
                         }
                     } else {
@@ -229,7 +228,7 @@ fun KeyScopeScreen(
                             ScaleCard(state.key)
                             ChordNowCard(state)
                             ChordsCard(state.key)
-                                ProgressionsCard(state.key, actions.playProgression, actions.shareProgressionMidi)
+                            ProgressionsCard(state.key, actions.playProgression, actions.shareProgressionMidi)
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state, project, metronomeRunning, actions)
@@ -247,20 +246,21 @@ fun KeyScopeScreen(
                             )
                             ControlsCard(state, actions)
                             HistoryCard(state.history, actions.clearHistory)
-                            Spacer(Modifier.height(96.dp))
                         }
                     }
-                }
 
-                Transport(
-                    listening = state.listening,
-                    level = level,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp),
-                    onStart = actions.start,
-                    onStop = actions.stop
-                )
+                    // In the layout rather than floating over it. Overlaying meant the last card
+                    // in a column sat underneath the buttons with nothing left to scroll past,
+                    // which is exactly what happened to the transpose card when unfolded.
+                    Spacer(Modifier.height(10.dp))
+                    Transport(
+                        listening = state.listening,
+                        level = level,
+                        modifier = Modifier.padding(bottom = 10.dp),
+                        onStart = actions.start,
+                        onStop = actions.stop
+                    )
+                }
             }
         }
     }
