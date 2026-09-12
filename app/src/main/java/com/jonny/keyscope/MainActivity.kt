@@ -3,7 +3,6 @@ package com.jonny.keyscope
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonny.keyscope.audio.Exports
 import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.KeyScopeEngine
 import com.jonny.keyscope.audio.ListeningService
@@ -76,6 +76,28 @@ class MainActivity : ComponentActivity() {
                         FileAnalysisController.analyze(context, uris, state.profile)
                     }
                 }
+
+                // Saving also goes through the picker, which is what makes Drive a destination
+                // without the app needing a Google sign-in or any Drive API at all.
+                var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
+                val writeResult: (android.net.Uri?) -> Unit = { uri ->
+                    val bytes = pendingSave
+                    pendingSave = null
+                    val written = uri != null && bytes != null && Exports.writeTo(context, uri, bytes)
+                    if (uri != null) {
+                        Toast.makeText(
+                            context,
+                            if (written) "Saved" else "Could not write there",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                val csvSaver = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("text/csv"), writeResult
+                )
+                val midiSaver = rememberLauncherForActivityResult(
+                    ActivityResultContracts.CreateDocument("audio/midi"), writeResult
+                )
 
                 // Nobody wants the screen to sleep mid-set while the reading is still settling.
                 DisposableEffect(state.listening) {
@@ -141,13 +163,8 @@ class MainActivity : ComponentActivity() {
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    share = {
-                        val share = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, state.summaryLine)
-                        }
-                        context.startActivity(Intent.createChooser(share, null))
-                    },
+                    // Copy stays the one-liner; share is worth more than a repeat of it.
+                    share = { Exports.shareText(context, Exports.report(state)) },
                     toggleTone = {
                         val key = state.key
                         if (tonePlaying || key == null) {
@@ -161,6 +178,51 @@ class MainActivity : ComponentActivity() {
                     },
                     pickFiles = {
                         filePicker.launch(arrayOf("audio/*"))
+                    },
+                    exportCsv = {
+                        val csv = FileAnalysisController.resultsAsCsv()
+                        if (csv.isNotEmpty()) {
+                            pendingSave = csv.toByteArray()
+                            csvSaver.launch("keybro-analysis.csv")
+                        }
+                    },
+                    shareCsv = {
+                        val csv = FileAnalysisController.resultsAsCsv()
+                        if (csv.isNotEmpty()) {
+                            val uri = Exports.stage(context, "keybro-analysis.csv", csv.toByteArray())
+                            Exports.shareFile(context, uri, "text/csv", "Key Bro analysis")
+                        }
+                    },
+                    shareResult = { result -> Exports.shareText(context, Exports.report(result)) },
+                    shareMidi = { result ->
+                        if (result.chords.isEmpty()) {
+                            Toast.makeText(context, "No chords in that one", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val name = Exports.baseName(result.name) + " chords.mid"
+                            val uri = Exports.stage(context, name, Exports.midiForChords(result))
+                            // A content URI is what puts Quick Share in the sheet.
+                            Exports.shareFile(context, uri, "audio/midi", name)
+                        }
+                    },
+                    saveMidi = { result ->
+                        if (result.chords.isEmpty()) {
+                            Toast.makeText(context, "No chords in that one", Toast.LENGTH_SHORT).show()
+                        } else {
+                            pendingSave = Exports.midiForChords(result)
+                            midiSaver.launch(Exports.baseName(result.name) + " chords.mid")
+                        }
+                    },
+                    shareProgressionMidi = { progression ->
+                        val key = state.key
+                        if (key != null) {
+                            val name = "${key.shortName} ${progression.name}.mid"
+                            val bytes = Exports.midiForProgression(
+                                key, progression, if (state.bpm > 0f) state.bpm else project.bpm
+                            )
+                            Exports.shareFile(
+                                context, Exports.stage(context, name, bytes), "audio/midi", name
+                            )
+                        }
                     },
                     copyFilesCsv = {
                         val csv = FileAnalysisController.resultsAsCsv()

@@ -7,6 +7,8 @@ import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Fft
 import com.jonny.keyscope.dsp.KeyDetector
 import com.jonny.keyscope.dsp.Resampler
+import com.jonny.keyscope.midi.MidiExport
+import com.jonny.keyscope.midi.MidiWriter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -431,6 +433,52 @@ class DspTest {
                 assertEquals(key, key.relative.relative)
             }
         }
+    }
+
+    // ------------------------------------------------------------- midi
+
+    private fun readInt(bytes: ByteArray, at: Int): Int =
+        ((bytes[at].toInt() and 0xFF) shl 24) or ((bytes[at + 1].toInt() and 0xFF) shl 16) or
+            ((bytes[at + 2].toInt() and 0xFF) shl 8) or (bytes[at + 3].toInt() and 0xFF)
+
+    private fun readShort(bytes: ByteArray, at: Int): Int =
+        ((bytes[at].toInt() and 0xFF) shl 8) or (bytes[at + 1].toInt() and 0xFF)
+
+    @Test
+    fun `writes a structurally valid midi file`() {
+        val bytes = MidiWriter.write(listOf(MidiWriter.Note(60, 0, 480)), 120f)
+
+        assertEquals("MThd", String(bytes, 0, 4, Charsets.US_ASCII))
+        assertEquals(6, readInt(bytes, 4))
+        assertEquals(0, readShort(bytes, 8))    // format 0
+        assertEquals(1, readShort(bytes, 10))   // one track
+        assertEquals(480, readShort(bytes, 12))
+        assertEquals("MTrk", String(bytes, 14, 4, Charsets.US_ASCII))
+
+        // The declared track length has to match what actually follows, or a DAW rejects the file.
+        assertEquals(bytes.size, 22 + readInt(bytes, 18))
+    }
+
+    @Test
+    fun `long delta times survive the variable length encoding`() {
+        // A note eight bars in needs a multi-byte delta, which is where hand-rolled MIDI usually
+        // goes wrong.
+        val far = MidiWriter.TICKS_PER_QUARTER * 32
+        val bytes = MidiWriter.write(listOf(MidiWriter.Note(60, far, far + 480)), 120f)
+        assertEquals(bytes.size, 22 + readInt(bytes, 18))
+    }
+
+    @Test
+    fun `a progression exports one triad per bar`() {
+        val key = MusicalKey(0, Mode.MAJOR)
+        val progression = Progressions.forKey(key).first { it.name == "Pop" }
+        val notes = MidiExport.fromProgression(key, progression)
+
+        assertEquals(progression.degrees.size * 3, notes.size)
+        // C major, first chord, root position starting on C3.
+        assertEquals(listOf(48, 52, 55), notes.take(3).map { it.pitch })
+        // Each chord occupies its own bar.
+        assertEquals(MidiWriter.TICKS_PER_QUARTER * 4, notes[3].startTick)
     }
 
     // ------------------------------------------------------------- helpers

@@ -38,8 +38,10 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Timer
@@ -81,6 +83,8 @@ import com.jonny.keyscope.TapTempo
 import com.jonny.keyscope.MusicalKey
 import com.jonny.keyscope.audio.AnalysisWindow
 import com.jonny.keyscope.audio.EngineState
+import com.jonny.keyscope.audio.Exports
+import com.jonny.keyscope.audio.FileAnalyzer
 import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.HistoryEntry
 import com.jonny.keyscope.audio.Project
@@ -112,7 +116,13 @@ class KeyScopeActions(
     val toggleMetronome: (Float) -> Unit,
     val pickFiles: () -> Unit,
     val copyFilesCsv: () -> Unit,
-    val clearFiles: () -> Unit
+    val clearFiles: () -> Unit,
+    val exportCsv: () -> Unit,
+    val shareCsv: () -> Unit,
+    val shareResult: (FileAnalyzer.Result) -> Unit,
+    val shareMidi: (FileAnalyzer.Result) -> Unit,
+    val saveMidi: (FileAnalyzer.Result) -> Unit,
+    val shareProgressionMidi: (Progression) -> Unit
 )
 
 @Composable
@@ -160,7 +170,7 @@ fun KeyScopeScreen(
                                 ScaleCard(state.key)
                                 ChordNowCard(state)
                                 ChordsCard(state.key)
-                                ProgressionsCard(state.key, actions.playProgression)
+                                ProgressionsCard(state.key, actions.playProgression, actions.shareProgressionMidi)
                                 CompatibleCard(state.key)
                                 TransposeCard(state, transposeTarget) { transposeTarget = it }
                             }
@@ -172,7 +182,11 @@ fun KeyScopeScreen(
                             ) {
                                 ChromaCard(state)
                                 TempoCard(state, project, metronomeRunning, actions)
-                                FilesCard(files, actions.pickFiles, actions.copyFilesCsv, actions.clearFiles, actions.setProjectKey)
+                                FilesCard(
+                                files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
+                                actions.shareCsv, actions.clearFiles, actions.setProjectKey,
+                                actions.shareResult, actions.shareMidi, actions.saveMidi
+                            )
                                 ControlsCard(state, actions)
                                 HistoryCard(state.history, actions.clearHistory)
                                 Spacer(Modifier.height(88.dp))
@@ -192,11 +206,15 @@ fun KeyScopeScreen(
                             ScaleCard(state.key)
                             ChordNowCard(state)
                             ChordsCard(state.key)
-                                ProgressionsCard(state.key, actions.playProgression)
+                                ProgressionsCard(state.key, actions.playProgression, actions.shareProgressionMidi)
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state, project, metronomeRunning, actions)
-                            FilesCard(files, actions.pickFiles, actions.copyFilesCsv, actions.clearFiles, actions.setProjectKey)
+                            FilesCard(
+                                files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
+                                actions.shareCsv, actions.clearFiles, actions.setProjectKey,
+                                actions.shareResult, actions.shareMidi, actions.saveMidi
+                            )
                             ControlsCard(state, actions)
                             HistoryCard(state.history, actions.clearHistory)
                             Spacer(Modifier.height(96.dp))
@@ -1053,8 +1071,13 @@ private fun FilesCard(
     files: FileAnalysisController.State,
     onPick: () -> Unit,
     onCopyCsv: () -> Unit,
+    onExportCsv: () -> Unit,
+    onShareCsv: () -> Unit,
     onClear: () -> Unit,
-    onUseAsProject: (MusicalKey) -> Unit
+    onUseAsProject: (MusicalKey) -> Unit,
+    onShareResult: (FileAnalyzer.Result) -> Unit,
+    onShareMidi: (FileAnalyzer.Result) -> Unit,
+    onSaveMidi: (FileAnalyzer.Result) -> Unit
 ) {
     SectionCard("Files") {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1089,15 +1112,16 @@ private fun FilesCard(
         }
 
         if (files.results.isNotEmpty()) {
+            var expanded by remember { mutableStateOf<String?>(null) }
             Spacer(Modifier.height(12.dp))
+
             files.results.forEach { result ->
+                val open = expanded == result.name
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable(enabled = result.key != null) {
-                            result.key?.let(onUseAsProject)
-                        }
+                        .clickable { expanded = if (open) null else result.name }
                         .padding(vertical = 8.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1119,15 +1143,66 @@ private fun FilesCard(
                         )
                     }
                 }
+
+                if (open && result.key != null) {
+                    Column(Modifier.padding(start = 4.dp, bottom = 10.dp)) {
+                        if (result.chords.isNotEmpty()) {
+                            Text(
+                                result.chordSummary,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        if (result.modulations.isNotEmpty()) {
+                            Text(
+                                "Key changes: " + result.modulations.joinToString("   ") {
+                                    "${Exports.timecode(it.startSeconds)} ${it.key.shortName}"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ActionButton(Icons.Filled.Share, "Share", Modifier.weight(1f)) {
+                                onShareResult(result)
+                            }
+                            ActionButton(
+                                Icons.Filled.Piano,
+                                "MIDI",
+                                Modifier.weight(1f),
+                                highlighted = result.chords.isNotEmpty()
+                            ) { onShareMidi(result) }
+                            ActionButton(Icons.Filled.Save, "Save", Modifier.weight(1f)) {
+                                onSaveMidi(result)
+                            }
+                            ActionButton(Icons.Filled.Album, "Project", Modifier.weight(1f)) {
+                                result.key.let(onUseAsProject)
+                            }
+                        }
+                        if (result.chords.isEmpty()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "No chords settled in this one, so the MIDI would be empty.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
+
             Spacer(Modifier.height(4.dp))
             Text(
-                "Tap a result to make it the project key.",
+                "Tap a result for its chords and exports.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row {
-                TextButton(onClick = onCopyCsv) { Text("Copy as CSV") }
+                TextButton(onClick = onExportCsv) { Text("Export CSV") }
+                TextButton(onClick = onShareCsv) { Text("Share CSV") }
+                TextButton(onClick = onCopyCsv) { Text("Copy") }
                 TextButton(onClick = onClear) { Text("Clear") }
             }
         }
@@ -1194,7 +1269,11 @@ private fun ChordNowCard(state: EngineState) {
 
 /** Common progressions spelled into the detected key, auditionable through the tone engine. */
 @Composable
-private fun ProgressionsCard(key: MusicalKey?, onPlay: (Progression) -> Unit) {
+private fun ProgressionsCard(
+    key: MusicalKey?,
+    onPlay: (Progression) -> Unit,
+    onShareMidi: (Progression) -> Unit
+) {
     SectionCard("Progressions in this key") {
         if (key == null) {
             Text(
@@ -1231,8 +1310,23 @@ private fun ProgressionsCard(key: MusicalKey?, onPlay: (Progression) -> Unit) {
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    Icons.Filled.Piano,
+                    contentDescription = "Share as MIDI",
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable { onShareMidi(progression) }
+                )
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Tap to hear it, or the keys icon to send it out as a MIDI file.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

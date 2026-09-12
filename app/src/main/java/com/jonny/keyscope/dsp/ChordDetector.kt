@@ -39,7 +39,12 @@ data class ChordSpan(val chord: DetectedChord, val startMillis: Long, val endMil
  * identical to its root position in a chroma, which has thrown the octave away by construction.
  * Treat the readout as a strong hint rather than a transcription.
  */
-class ChordDetector {
+class ChordDetector(
+    /** Frames a candidate must win before it replaces the standing chord. */
+    private val commitFrames: Int = COMMIT_FRAMES,
+    /** How fast the chroma average follows a change; higher is faster and twitchier. */
+    private val smoothing: Float = 0.5f
+) {
 
     companion object {
         /** Below this the frame is not confidently any chord, so nothing is reported. */
@@ -84,7 +89,7 @@ class ChordDetector {
             System.arraycopy(chroma12, 0, smoothed, 0, 12)
             primed = true
         } else {
-            for (i in 0 until 12) smoothed[i] += (chroma12[i] - smoothed[i]) * 0.5f
+            for (i in 0 until 12) smoothed[i] += (chroma12[i] - smoothed[i]) * smoothing
         }
 
         val best = match(smoothed, key)
@@ -100,7 +105,7 @@ class ChordDetector {
             candidate = best
             candidateFrames = 1
         }
-        if (candidateFrames >= COMMIT_FRAMES) committed = best
+        if (candidateFrames >= commitFrames) committed = best
         return committed
     }
 
