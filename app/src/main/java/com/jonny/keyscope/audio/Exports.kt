@@ -136,6 +136,9 @@ object Exports {
     fun midiForProgression(key: MusicalKey, progression: Progression, bpm: Float): ByteArray =
         MidiWriter.write(MidiExport.fromProgression(key, progression), bpm)
 
+    fun midiForMelody(notes: List<com.jonny.keyscope.dsp.MelodyExtractor.Note>, bpm: Float): ByteArray =
+        MidiWriter.write(MidiExport.fromMelody(notes, bpm), bpm)
+
     fun midiForScale(key: MusicalKey, bpm: Float): ByteArray =
         MidiWriter.write(MidiExport.fromScale(key), bpm)
 

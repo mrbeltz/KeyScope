@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonny.keyscope.audio.CaptureController
 import com.jonny.keyscope.audio.Exports
 import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.KeyScopeEngine
@@ -48,6 +49,8 @@ class MainActivity : ComponentActivity() {
                 val metronomeRunning by Metronome.running.collectAsStateWithLifecycle()
                 val project by ProjectSettings.state.collectAsStateWithLifecycle()
                 val files by FileAnalysisController.state.collectAsStateWithLifecycle()
+                val capture by CaptureController.state.collectAsStateWithLifecycle()
+                val captureSeconds by KeyScopeEngine.captureSeconds.collectAsStateWithLifecycle()
 
                 var hasPermission by remember {
                     mutableStateOf(
@@ -232,6 +235,42 @@ class MainActivity : ComponentActivity() {
                             midiSaver.launch(Exports.baseName(result.name) + " chords.mid")
                         }
                     },
+                    startRecording = {
+                        // Recording needs the mic open, so start it if it is not already.
+                        ReferenceTone.stop()
+                        Metronome.stop()
+                        if (!state.listening) {
+                            KeyScopeEngine.resetAnalysis()
+                            ListeningService.start(context)
+                        }
+                        CaptureController.start()
+                    },
+                    stopRecording = { CaptureController.stop(state.profile, state.referenceHz) },
+                    discardRecording = CaptureController::discard,
+                    shareCaptureChords = {
+                        CaptureController.state.value.result?.let { result ->
+                            val name = "${result.analysis.key?.shortName ?: "Take"} chords.mid"
+                            val bytes = Exports.midiForChords(result.analysis)
+                            Exports.shareFile(
+                                context, Exports.stage(context, name, bytes), "audio/midi", name
+                            )
+                        }
+                    },
+                    shareCaptureMelody = {
+                        CaptureController.state.value.result?.let { result ->
+                            val name = "${result.analysis.key?.shortName ?: "Take"} melody.mid"
+                            val bytes = Exports.midiForMelody(result.melody, result.analysis.bpm)
+                            Exports.shareFile(
+                                context, Exports.stage(context, name, bytes), "audio/midi", name
+                            )
+                        }
+                    },
+                    saveCaptureMelody = {
+                        CaptureController.state.value.result?.let { result ->
+                            pendingSave = Exports.midiForMelody(result.melody, result.analysis.bpm)
+                            midiSaver.launch("${result.analysis.key?.shortName ?: "Take"} melody.mid")
+                        }
+                    },
                     pickFolder = { folderPicker.launch(null) },
                     previewRenames = { renamePlan = FileAnalysisController.renamePlan() },
                     applyRenames = {
@@ -296,6 +335,8 @@ class MainActivity : ComponentActivity() {
                     tonePlaying = tonePlaying,
                     metronomeRunning = metronomeRunning,
                     files = files,
+                    capture = capture,
+                    captureSeconds = captureSeconds,
                     renamePlan = renamePlan,
                     actions = actions
                 )

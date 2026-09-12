@@ -3,6 +3,7 @@ package com.jonny.keyscope.midi
 import com.jonny.keyscope.MusicalKey
 import com.jonny.keyscope.Progression
 import com.jonny.keyscope.audio.FileAnalyzer
+import com.jonny.keyscope.dsp.MelodyExtractor
 
 /**
  * Turns what the app has worked out into notes a DAW will accept.
@@ -50,6 +51,19 @@ object MidiExport {
             }
         }
     }
+
+    /**
+     * A tracked melody, kept at the pitches and times it was actually played. No quantising: the
+     * timing is evidence of what happened, and a DAW can straighten it far better than this can.
+     */
+    fun fromMelody(notes: List<MelodyExtractor.Note>, bpm: Float): List<MidiWriter.Note> =
+        notes.map { note ->
+            MidiWriter.Note(
+                note.midi,
+                MidiWriter.ticksForSeconds(note.startSeconds, bpm),
+                MidiWriter.ticksForSeconds(note.endSeconds, bpm)
+            )
+        }
 
     /** The scale as a single ascending line, a note per beat. */
     fun fromScale(key: MusicalKey): List<MidiWriter.Note> {

@@ -52,6 +52,9 @@ object KeyScopeEngine {
     /** Hops the winner must survive before the readout is called locked. */
     private const val LOCK_HOPS = 11                        // about two seconds
 
+    /** Two minutes of captured audio is about five megabytes at the analysis rate. */
+    private const val MAX_CAPTURE_SECONDS = 120
+
     private val _state = MutableStateFlow(EngineState())
     val state: StateFlow<EngineState> = _state.asStateFlow()
 
@@ -65,6 +68,13 @@ object KeyScopeEngine {
     @Volatile private var resetRequested = false
     @Volatile private var pendingWindow: AnalysisWindow? = null
     @Volatile private var continuousListening = false
+    @Volatile private var capturing = false
+
+    private var captureBuffer = FloatArray(0)
+    private var captureLength = 0
+
+    private val _captureSeconds = MutableStateFlow(0f)
+    val captureSeconds: StateFlow<Float> = _captureSeconds.asStateFlow()
 
     private val detector = KeyDetector()
     private val chordDetector = ChordDetector()
@@ -102,6 +112,31 @@ object KeyScopeEngine {
             )
         }
     }
+
+    /**
+     * Starts keeping the audio as well as analysing it, so a passage can be turned into notes
+     * afterwards. Capped at two minutes, which at the analysis rate is about five megabytes.
+     */
+    @Synchronized
+    fun startCapture() {
+        captureBuffer = FloatArray(MAX_CAPTURE_SECONDS * WORK_RATE)
+        captureLength = 0
+        capturing = true
+        _captureSeconds.value = 0f
+    }
+
+    /** Stops keeping audio and hands back exactly what was recorded. */
+    @Synchronized
+    fun stopCapture(): FloatArray {
+        capturing = false
+        val taken = captureBuffer.copyOf(captureLength)
+        captureBuffer = FloatArray(0)
+        captureLength = 0
+        _captureSeconds.value = 0f
+        return taken
+    }
+
+    fun isCapturing(): Boolean = capturing
 
     /** When off (the default), the mic releases itself as soon as a lock lands. */
     fun setContinuous(enabled: Boolean) {
@@ -176,6 +211,17 @@ object KeyScopeEngine {
                 val decimatedCount = decimator.process(readBuffer, read, decimated)
                 tempo.feed(decimated, decimatedCount)
 
+                if (capturing) {
+                    val room = captureBuffer.size - captureLength
+                    val take = minOf(room, decimatedCount)
+                    if (take > 0) {
+                        System.arraycopy(decimated, 0, captureBuffer, captureLength, take)
+                        captureLength += take
+                        _captureSeconds.value = captureLength.toFloat() / WORK_RATE
+                    }
+                    if (take < decimatedCount) capturing = false  // hit the cap
+                }
+
                 var offset = 0
                 while (offset < decimatedCount) {
                     val take = minOf(HOP - hopFill, decimatedCount - offset)
@@ -232,7 +278,8 @@ object KeyScopeEngine {
                     // A lock is the answer, so unless asked to keep going, let the mic go. The
                     // loop exits through its finally block, which drops listening to false and
                     // lets the service tear its notification down.
-                    val releaseMic = locked && !continuousListening
+                    // Never cut a recording short just because the key settled.
+                    val releaseMic = locked && !continuousListening && !capturing
 
                     _state.update { previous ->
                         val history = if (locked && winner != null &&

@@ -106,6 +106,41 @@ object FileAnalyzer {
     fun analyze(context: Context, uri: Uri, profile: KeyProfile): Result {
         val name = AudioFileDecoder.displayName(context, uri)
         return try {
+            run(name, profile) { onBlock ->
+                AudioFileDecoder.decode(context, uri, AnalysisConfig.WORK_RATE, onBlock)
+            }
+        } catch (e: AudioFileDecoder.DecodeFailure) {
+            Result(name, error = e.message)
+        } catch (e: Exception) {
+            Result(name, error = e.message ?: "Could not decode this file")
+        }
+    }
+
+    /** The same pipeline over audio already in memory, for anything captured from the mic. */
+    fun analyzeSamples(name: String, samples: FloatArray, profile: KeyProfile): Result = try {
+        run(name, profile) { onBlock ->
+            var offset = 0
+            while (offset < samples.size) {
+                val count = minOf(4096, samples.size - offset)
+                if (!onBlock(samples.copyOfRange(offset, offset + count), count)) break
+                offset += count
+            }
+            samples.size.toFloat() / AnalysisConfig.WORK_RATE
+        }
+    } catch (e: Exception) {
+        Result(name, error = e.message ?: "Could not analyse that recording")
+    }
+
+    /**
+     * The analysis itself, independent of where the samples come from. [produce] is handed a block
+     * consumer and returns the duration it fed through.
+     */
+    private fun run(
+        name: String,
+        profile: KeyProfile,
+        produce: ((FloatArray, Int) -> Boolean) -> Float
+    ): Result {
+        return kotlin.run {
             val chroma = ChromaExtractor(AnalysisConfig.WORK_RATE, AnalysisConfig.FFT_SIZE)
             val accumulator = ChromaAccumulator(MAX_FRAMES)
             val tempo = TempoTracker(AnalysisConfig.WORK_RATE)
@@ -130,9 +165,7 @@ object FileAnalyzer {
             var chordFrames = 0
             val rawChords = ArrayList<TimedChord>()
 
-            val seconds = AudioFileDecoder.decode(
-                context, uri, AnalysisConfig.WORK_RATE
-            ) { block, count ->
+            val seconds = produce { block, count ->
                 tempo.feed(block, count)
 
                 var offset = 0
@@ -233,10 +266,6 @@ object FileAnalyzer {
                     segments = segments
                 )
             }
-        } catch (e: AudioFileDecoder.DecodeFailure) {
-            Result(name, error = e.message)
-        } catch (e: Exception) {
-            Result(name, error = e.message ?: "Could not decode this file")
         }
     }
 

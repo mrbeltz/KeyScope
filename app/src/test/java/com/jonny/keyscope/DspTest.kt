@@ -6,6 +6,7 @@ import com.jonny.keyscope.dsp.ChromaAccumulator
 import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Fft
 import com.jonny.keyscope.dsp.KeyDetector
+import com.jonny.keyscope.dsp.MelodyExtractor
 import com.jonny.keyscope.dsp.Resampler
 import com.jonny.keyscope.audio.FileAnalyzer
 import com.jonny.keyscope.audio.FolderScanner
@@ -435,6 +436,68 @@ class DspTest {
                 assertEquals(key, key.relative.relative)
             }
         }
+    }
+
+    // ------------------------------------------------------------- melody
+
+    private fun tone(midi: Int, seconds: Double, reference: Double = 440.0): FloatArray {
+        val frequency = reference * Math.pow(2.0, (midi - 69) / 12.0)
+        val count = (seconds * sampleRate).toInt()
+        return FloatArray(count) { i ->
+            val t = i.toDouble() / sampleRate
+            // A couple of harmonics, because a bare sine is an unrealistically easy target.
+            ((sin(2 * PI * frequency * t) + 0.4 * sin(4 * PI * frequency * t)) * 0.3).toFloat()
+        }
+    }
+
+    @Test
+    fun `tracks a held note at the right pitch`() {
+        val notes = MelodyExtractor.extract(tone(69, 1.0), sampleRate)  // A4
+        assertTrue("got ${notes.size} notes", notes.isNotEmpty())
+        assertEquals(69, notes.first().midi)
+    }
+
+    @Test
+    fun `does not drop an octave on a low note`() {
+        // The classic autocorrelation failure is reporting half the frequency, so a low note with
+        // strong harmonics is the case worth pinning.
+        val notes = MelodyExtractor.extract(tone(45, 1.0), sampleRate)  // A2, 110 Hz
+        assertTrue("got nothing", notes.isNotEmpty())
+        assertEquals(45, notes.first().midi)
+    }
+
+    @Test
+    fun `separates a sequence of notes`() {
+        val line = listOf(60, 62, 64, 65)
+        var samples = FloatArray(0)
+        line.forEach { samples += tone(it, 0.45) }
+
+        val notes = MelodyExtractor.extract(samples, sampleRate)
+        // Boundaries between notes can produce a brief spurious frame, so match on the run of
+        // distinct pitches rather than on an exact count.
+        val distinct = notes.map { it.midi }.fold(mutableListOf<Int>()) { acc, midi ->
+            if (acc.lastOrNull() != midi) acc.add(midi)
+            acc
+        }
+        assertEquals(line, distinct)
+    }
+
+    @Test
+    fun `reports nothing for silence`() {
+        assertTrue(MelodyExtractor.extract(FloatArray(sampleRate), sampleRate).isEmpty())
+    }
+
+    @Test
+    fun `melody midi keeps the played timing`() {
+        val notes = listOf(
+            MelodyExtractor.Note(60, 0f, 0.5f),
+            MelodyExtractor.Note(64, 0.5f, 1.0f)
+        )
+        val midi = MidiExport.fromMelody(notes, 120f)
+        assertEquals(2, midi.size)
+        assertEquals(60, midi[0].pitch)
+        // At 120 BPM a beat is half a second, so the second note starts one beat in.
+        assertEquals(MidiWriter.TICKS_PER_QUARTER, midi[1].startTick)
     }
 
     // ------------------------------------------------------------- renaming

@@ -83,6 +83,7 @@ import com.jonny.keyscope.Progressions
 import com.jonny.keyscope.TapTempo
 import com.jonny.keyscope.MusicalKey
 import com.jonny.keyscope.audio.AnalysisWindow
+import com.jonny.keyscope.audio.CaptureController
 import com.jonny.keyscope.audio.EngineState
 import com.jonny.keyscope.audio.Exports
 import com.jonny.keyscope.audio.FileAnalyzer
@@ -128,7 +129,13 @@ class KeyScopeActions(
     val pickFolder: () -> Unit,
     val previewRenames: () -> Unit,
     val applyRenames: () -> Unit,
-    val cancelRenames: () -> Unit
+    val cancelRenames: () -> Unit,
+    val startRecording: () -> Unit,
+    val stopRecording: () -> Unit,
+    val discardRecording: () -> Unit,
+    val shareCaptureChords: () -> Unit,
+    val shareCaptureMelody: () -> Unit,
+    val saveCaptureMelody: () -> Unit
 )
 
 @Composable
@@ -140,6 +147,8 @@ fun KeyScopeScreen(
     tonePlaying: Boolean,
     metronomeRunning: Boolean,
     files: FileAnalysisController.State,
+    capture: CaptureController.State,
+    captureSeconds: Float,
     renamePlan: List<FileAnalysisController.RenamePlan>,
     actions: KeyScopeActions
 ) {
@@ -189,6 +198,11 @@ fun KeyScopeScreen(
                             ) {
                                 ChromaCard(state)
                                 TempoCard(state, project, metronomeRunning, actions)
+                                CaptureCard(
+                                    capture, captureSeconds, hasPermission, actions.startRecording,
+                                    actions.stopRecording, actions.discardRecording, actions.shareCaptureChords,
+                                    actions.shareCaptureMelody, actions.saveCaptureMelody
+                                )
                                 FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
@@ -219,6 +233,11 @@ fun KeyScopeScreen(
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state, project, metronomeRunning, actions)
+                            CaptureCard(
+                                capture, captureSeconds, hasPermission, actions.startRecording,
+                                actions.stopRecording, actions.discardRecording, actions.shareCaptureChords,
+                                actions.shareCaptureMelody, actions.saveCaptureMelody
+                            )
                             FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
@@ -1069,6 +1088,136 @@ private fun TonicPicker(selected: Int?, onSelect: (Int) -> Unit) {
                     color = if (on) MaterialTheme.colorScheme.onPrimary
                     else MaterialTheme.colorScheme.onSurface
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Record a passage and turn it into notes.
+ *
+ * Two readings come out of one recording, and they are good at opposite things. Chords come from
+ * the chroma, which hears several notes at once but has thrown the octave away. The melody comes
+ * from pitch tracking, which knows exactly which octave but follows only one note at a time. Which
+ * is useful depends on what you played, so both are offered.
+ */
+@Composable
+private fun CaptureCard(
+    capture: CaptureController.State,
+    seconds: Float,
+    hasPermission: Boolean,
+    onRecord: () -> Unit,
+    onStopRecording: () -> Unit,
+    onDiscard: () -> Unit,
+    onShareChords: () -> Unit,
+    onShareMelody: () -> Unit,
+    onSaveMelody: () -> Unit
+) {
+    SectionCard("Record") {
+        val result = capture.result
+        when {
+            capture.recording -> {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        Exports.timecode(seconds),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.weight(1f))
+                    ActionButton(
+                        Icons.Filled.StopCircle, "Stop", Modifier.width(96.dp), highlighted = true
+                    ) { onStopRecording() }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Play or hum a passage. Two minutes maximum.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            capture.analysing -> {
+                Text("Working it out…", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+
+            result != null -> {
+                val analysis = result.analysis
+                Text(
+                    analysis.key?.name ?: "No clear key",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${Exports.timecode(result.seconds)} recorded" +
+                        if (analysis.bpm > 0f) "  ·  ${Math.round(analysis.bpm)} BPM" else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (result.hasChords) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        analysis.chordSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                if (result.hasMelody) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "${result.melody.size} notes tracked",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    ActionButton(
+                        Icons.Filled.Piano, "Chords", Modifier.weight(1f),
+                        highlighted = result.hasChords
+                    ) { if (result.hasChords) onShareChords() }
+                    ActionButton(
+                        Icons.Filled.GraphicEq, "Melody", Modifier.weight(1f),
+                        highlighted = result.hasMelody
+                    ) { if (result.hasMelody) onShareMelody() }
+                    ActionButton(Icons.Filled.Save, "Save", Modifier.weight(1f)) {
+                        if (result.hasMelody) onSaveMelody()
+                    }
+                    ActionButton(Icons.Filled.Refresh, "Again", Modifier.weight(1f)) { onDiscard() }
+                }
+                if (!result.hasMelody) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "No single line came through. Melody tracking follows one note at a time, " +
+                            "so it needs something played or hummed on its own.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            else -> {
+                Text(
+                    "Record a passage and take the chords or the melody out as MIDI.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                capture.message?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                ActionButton(
+                    Icons.Filled.Mic, "Record", Modifier.width(112.dp), highlighted = hasPermission
+                ) { if (hasPermission) onRecord() }
             }
         }
     }
