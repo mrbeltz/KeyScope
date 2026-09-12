@@ -8,7 +8,38 @@ Built and laid out for a Galaxy Z Fold: single column on the cover screen, two p
 it, and the listening session survives the fold because the audio engine is a process singleton
 rather than a ViewModel.
 
-## Building it
+## Once a reading lands
+
+By default the mic releases itself the moment a key locks — a lock is the answer, and there is no
+reason to keep recording past it. The reveal is a pair of rings blooming outward with a haptic tick
+on the same frame, so the result registers without looking at the screen. The *Keep listening after
+lock* switch in the Analysis card turns that off and keeps it re-reading as the music changes.
+
+From the locked reading you can:
+
+- **Copy or share** it as one line: `F# minor · 11A · Open Key 4m · 128 BPM`.
+- **Transpose** to a target tonic. Shows the semitone move — shortest path, so G from C reads as
+  −5 rather than +7 — and the tempo a varispeed pitch drags along with it. Key lock leaves tempo
+  alone, and it says so.
+- **Sound the tonic**, or walk the scale up to the octave. Both are built at the *detected*
+  reference pitch, so on a record cut to A=432 they line up instead of fighting it. The tone stops
+  itself when the mic opens, since otherwise it would feed straight into its own reading.
+- **Read the chords** — the seven diatonic triads with roman numerals.
+
+## Getting it on a phone
+
+The repo builds itself. Every push to `main` runs `.github/workflows/build.yml`, which produces a
+debug APK and attaches it to a rolling `latest` release, so a phone can install it straight from
+the releases page with no toolchain anywhere:
+
+```
+https://github.com/mrbeltz/KeyScope/releases/latest
+```
+
+The APK is published *before* the test step runs, so a failing DSP test turns the run red without
+withholding a build you can try.
+
+## Building it locally
 
 No Android SDK is required on your side beyond Android Studio:
 
@@ -80,7 +111,8 @@ Tempo is a separate path: log-compressed spectral flux at a 256-sample hop, auto
 
 Everything worth adjusting is a constant near the top of its file:
 
-- `KeyScopeEngine.LOCK_HOPS` — how long a reading must hold before it is called stable.
+- `KeyScopeEngine.LOCK_HOPS` — how long a reading must hold before it is called stable. This is
+  also what decides how quickly the mic lets go, so shorten it if locks feel slow.
 - `KeyScopeEngine.SILENCE_RMS` — the gate below which frames are ignored.
 - `ChromaExtractor.HARMONIC_DECAY` / `HARMONICS` — how strongly upper partials vote for their root.
   Raising the decay helps on harmonically rich material and hurts on sparse material.
@@ -94,20 +126,21 @@ Everything worth adjusting is a constant near the top of its file:
 - **Internal audio capture.** `AudioPlaybackCaptureConfiguration` plus a `MediaProjection` consent
   prompt would let it analyse audio playing on the phone itself, for apps that allow capture. Many
   music apps set `ALLOW_CAPTURE_BY_NONE`, so it works for some sources and not others.
-- **Key history export.** The log already holds timestamped entries; writing them to CSV is a few
-  lines in `HistoryCard`.
-- **Pitch-shift suggestion.** Auto Key's other half: given a target key, show the semitone shift and
-  the percentage tempo change that gets you there.
+- **Named readings and CSV export.** The log already holds timestamped entries; letting you label
+  one and write the set out as CSV is a small addition to `HistoryCard`.
+- **Chord following.** The chroma already carries enough to guess the current chord, not just the
+  key, which would turn the chord chart into a live readout.
 
 ## Layout
 
 ```
 app/src/main/java/com/jonny/keyscope/
-  MainActivity.kt            permissions, keep-screen-on, wiring
-  MusicalKey.kt              key naming, scale spelling, Camelot / Open Key
+  MainActivity.kt            permissions, clipboard, share, keep-screen-on, wiring
+  MusicalKey.kt              naming, scale spelling, Camelot / Open Key, chords, transposition
   audio/
-    KeyScopeEngine.kt        microphone, analysis thread, state
+    KeyScopeEngine.kt        microphone, analysis thread, state, auto-release on lock
     ListeningService.kt      foreground service so it survives app switching
+    ReferenceTone.kt         tonic drone and scale playback at the detected pitch
     EngineState.kt           the state the UI reads
   dsp/
     Fft.kt                   allocation-free radix-2 FFT
