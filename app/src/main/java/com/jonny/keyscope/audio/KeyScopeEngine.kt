@@ -11,7 +11,10 @@ import android.os.Process
 import android.util.Log
 import com.jonny.keyscope.MusicalKey
 import com.jonny.keyscope.dsp.AnalysisConfig
+import com.jonny.keyscope.dsp.ChordDetector
+import com.jonny.keyscope.dsp.ChordSpan
 import com.jonny.keyscope.dsp.ChromaAccumulator
+import com.jonny.keyscope.dsp.DetectedChord
 import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Decimator
 import com.jonny.keyscope.dsp.KeyDetector
@@ -64,6 +67,7 @@ object KeyScopeEngine {
     @Volatile private var continuousListening = false
 
     private val detector = KeyDetector()
+    private val chordDetector = ChordDetector()
 
     fun isRunning(): Boolean = running
 
@@ -92,7 +96,10 @@ object KeyScopeEngine {
     fun resetAnalysis() {
         resetRequested = true
         _state.update {
-            it.copy(key = null, confidence = 0f, locked = false, windowFill = 0f, autoStopped = false)
+            it.copy(
+                key = null, confidence = 0f, locked = false, windowFill = 0f,
+                autoStopped = false, chord = null, chordSpans = emptyList()
+            )
         }
     }
 
@@ -160,6 +167,7 @@ object KeyScopeEngine {
                     resetRequested = false
                     accumulator.reset()
                     tempo.reset()
+                    chordDetector.reset()
                     lastWinner = null
                     stableHops = 0
                     smoothedConfidence = 0f
@@ -188,6 +196,17 @@ object KeyScopeEngine {
                     val profile36 = accumulator.snapshot()
                     val tuning = ChromaAccumulator.estimateTuningCents(profile36)
                     val chroma12 = ChromaAccumulator.fold(profile36, tuning)
+
+                    // Chords come from this frame alone, folded with the tuning the long average
+                    // has already worked out. Free: the chroma was computed either way.
+                    val chordNow = if (silent) {
+                        null
+                    } else {
+                        chordDetector.track(
+                            ChromaAccumulator.fold(chroma.profile, tuning),
+                            _state.value.key
+                        )
+                    }
 
                     val ranked = detector.rank(chroma12)
                     val rawConfidence = detector.confidence(ranked)
@@ -239,6 +258,8 @@ object KeyScopeEngine {
                             windowFill = fill,
                             silent = silent,
                             autoStopped = releaseMic,
+                            chord = chordNow,
+                            chordSpans = updateSpans(previous.chordSpans, chordNow),
                             history = history
                         )
                     }
@@ -271,6 +292,23 @@ object KeyScopeEngine {
     private fun fail(message: String, e: Throwable) {
         Log.e(TAG, message, e)
         _state.update { it.copy(error = message) }
+    }
+
+    /**
+     * Extends the current span while the chord holds, and opens a new one when it changes. Only
+     * the last sixteen are kept; past that it stops being a progression and starts being a log.
+     */
+    private fun updateSpans(spans: List<ChordSpan>, chord: DetectedChord?): List<ChordSpan> {
+        if (chord == null) return spans
+        val now = System.currentTimeMillis()
+        val last = spans.lastOrNull()
+        return if (last != null && last.chord.root == chord.root &&
+            last.chord.quality == chord.quality
+        ) {
+            spans.dropLast(1) + last.copy(endMillis = now)
+        } else {
+            (spans + ChordSpan(chord, now, now)).takeLast(16)
+        }
     }
 
     private fun rmsOf(buffer: FloatArray): Float {

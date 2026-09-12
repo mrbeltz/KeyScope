@@ -158,6 +158,7 @@ fun KeyScopeScreen(
                                 resultActions()
                                 ProjectFitCard(state, project, actions)
                                 ScaleCard(state.key)
+                                ChordNowCard(state)
                                 ChordsCard(state.key)
                                 ProgressionsCard(state.key, actions.playProgression)
                                 CompatibleCard(state.key)
@@ -189,6 +190,7 @@ fun KeyScopeScreen(
                             ProjectFitCard(state, project, actions)
                             ChromaCard(state)
                             ScaleCard(state.key)
+                            ChordNowCard(state)
                             ChordsCard(state.key)
                                 ProgressionsCard(state.key, actions.playProgression)
                             CompatibleCard(state.key)
@@ -1129,6 +1131,64 @@ private fun FilesCard(
                 TextButton(onClick = onClear) { Text("Clear") }
             }
         }
+    }
+}
+
+/**
+ * What is being played right now, and what came before it.
+ *
+ * Held to a lower standard than the key readout by nature: chords move faster than the analysis
+ * window, so the card says plainly when it is unsure rather than inventing something.
+ */
+@Composable
+private fun ChordNowCard(state: EngineState) {
+    SectionCard("Chord") {
+        val chord = state.chord
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                chord?.name(state.key) ?: "--",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = if (chord != null) MaterialTheme.colorScheme.secondary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
+            if (chord != null) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        chord.pitchClasses().joinToString(" ") { MusicalKey.CHROMA_LABELS[it] },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "${(chord.score * 100).roundToInt()}% fit",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        if (state.chordSpans.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                state.chordSpans.takeLast(8).joinToString("  →  ") { it.chord.name(state.key) },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            when {
+                !state.listening -> "Chords are read live, so start the mic to follow a progression."
+                state.silent -> "Nothing reaching the mic."
+                chord == null -> "Nothing that fits a chord cleanly right now."
+                else -> "A strong hint, not a transcription — inversions and sevenths are genuinely ambiguous in chroma."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

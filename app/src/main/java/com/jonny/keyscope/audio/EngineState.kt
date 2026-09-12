@@ -1,6 +1,8 @@
 package com.jonny.keyscope.audio
 
 import com.jonny.keyscope.MusicalKey
+import com.jonny.keyscope.dsp.ChordSpan
+import com.jonny.keyscope.dsp.DetectedChord
 import com.jonny.keyscope.dsp.KeyProfile
 
 /** How much audio the key estimate is averaged over. */
@@ -36,6 +38,10 @@ data class EngineState(
     val window: AnalysisWindow = AnalysisWindow.NORMAL,
     val profile: KeyProfile = KeyProfile.SHAATH,
     val inputSource: String = "",
+    /** The chord being held right now, from short-window chroma rather than the long average. */
+    val chord: DetectedChord? = null,
+    /** Recent chords in the order they were played, oldest first. */
+    val chordSpans: List<ChordSpan> = emptyList(),
     /** When false, the mic shuts off the moment a lock lands. */
     val continuousListening: Boolean = false,
     /** True when the mic released itself on a lock rather than being stopped by hand. */

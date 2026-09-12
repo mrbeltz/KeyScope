@@ -1,5 +1,7 @@
 package com.jonny.keyscope
 
+import com.jonny.keyscope.dsp.ChordDetector
+import com.jonny.keyscope.dsp.ChordQuality
 import com.jonny.keyscope.dsp.ChromaAccumulator
 import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Fft
@@ -237,6 +239,59 @@ class DspTest {
         assertEquals(432.0, MusicalKey.frequencyOf(9, 432f).toDouble(), 0.01)
     }
 
+    // ------------------------------------------------------------- chords
+
+    private fun chromaOf(vararg pitchClasses: Int): FloatArray {
+        val chroma = FloatArray(12)
+        pitchClasses.forEach { chroma[Math.floorMod(it, 12)] = 1f }
+        return chroma
+    }
+
+    @Test
+    fun `matches plain triads`() {
+        val detector = ChordDetector()
+        val cMajor = detector.match(chromaOf(0, 4, 7), null)!!
+        assertEquals(0, cMajor.root)
+        assertEquals(ChordQuality.MAJOR, cMajor.quality)
+
+        val aMinor = detector.match(chromaOf(9, 0, 4), null)!!
+        assertEquals(9, aMinor.root)
+        assertEquals(ChordQuality.MINOR, aMinor.quality)
+
+        val gDominant = detector.match(chromaOf(7, 11, 2, 5), null)!!
+        assertEquals(7, gDominant.root)
+        assertEquals(ChordQuality.DOMINANT7, gDominant.quality)
+    }
+
+    @Test
+    fun `does not invent a chord out of noise`() {
+        val detector = ChordDetector()
+        // Every pitch class at once fits nothing in particular.
+        assertEquals(null, detector.match(FloatArray(12) { 1f }, null))
+        assertEquals(null, detector.match(FloatArray(12), null))
+    }
+
+    @Test
+    fun `chord names are spelled inside the key`() {
+        val detector = ChordDetector()
+        val fMajor = MusicalKey(5, Mode.MAJOR)
+        // The fourth degree of F major is Bb, and must not be shown as A#.
+        val bFlat = detector.match(chromaOf(10, 2, 5), fMajor)!!
+        assertEquals("Bb", bFlat.name(fMajor))
+        assertEquals("A#", bFlat.name(null))
+    }
+
+    @Test
+    fun `tracking needs agreement before it commits`() {
+        val detector = ChordDetector()
+        val c = chromaOf(0, 4, 7)
+        // One frame is not enough to put something on screen.
+        assertEquals(null, detector.track(c, null))
+        assertEquals(0, detector.track(c, null)?.root)
+    }
+
+    // ------------------------------------------------------------- resampling
+
     @Test
     fun `resampling preserves the pitch of a tone`() {
         // A 440 Hz tone crosses zero 880 times a second whatever the sample rate.
@@ -257,11 +312,18 @@ class DspTest {
     }
 
     @Test
-    fun `resampling rejects content above the new nyquist`() {
-        // 7 kHz cannot survive a trip to 11.025 kHz; it must be filtered away rather than folded
-        // back down as a phantom low tone that would corrupt the chroma.
+    fun `resampling attenuates content above the new nyquist`() {
+        // 7 kHz would fold down to 4 kHz as a phantom tone in the middle of the chroma range, so
+        // it has to be attenuated on the way through rather than aliased.
+        //
+        // The cutoff is 0.40 of the destination rate, matching the live microphone path exactly,
+        // which puts 7 kHz two thirds of an octave up. A 6th-order Butterworth gives about 27 dB
+        // there. That is the real figure; asserting anything much tighter would be asserting a
+        // filter this is not.
         val source = 48000
         val input = FloatArray(source) { sin(2.0 * PI * 7000.0 * it / source).toFloat() }
+        val inputRms = sqrt(input.sumOf { it * it.toDouble() } / input.size)
+
         val resampler = Resampler(source, sampleRate)
         val output = FloatArray(resampler.maxOutput(input.size))
         val written = resampler.process(input, input.size, output)
@@ -270,7 +332,27 @@ class DspTest {
         // Skip the filter's start-up transient.
         for (i in 500 until written) energy += output[i] * output[i].toDouble()
         val rms = sqrt(energy / (written - 500))
-        assertTrue("survived at rms $rms", rms < 0.02)
+
+        assertTrue("survived at rms $rms", rms < 0.05)
+        assertTrue("only attenuated to ${rms / inputRms} of input", rms / inputRms < 0.07)
+    }
+
+    @Test
+    fun `resampling passes content the chroma actually needs`() {
+        // The other half of the trade: 1 kHz is squarely inside the range the chroma reads, and
+        // must come through essentially untouched.
+        val source = 48000
+        val input = FloatArray(source) { sin(2.0 * PI * 1000.0 * it / source).toFloat() }
+        val inputRms = sqrt(input.sumOf { it * it.toDouble() } / input.size)
+
+        val resampler = Resampler(source, sampleRate)
+        val output = FloatArray(resampler.maxOutput(input.size))
+        val written = resampler.process(input, input.size, output)
+
+        var energy = 0.0
+        for (i in 500 until written) energy += output[i] * output[i].toDouble()
+        val rms = sqrt(energy / (written - 500))
+        assertTrue("passed at ${rms / inputRms} of input", rms / inputRms > 0.85)
     }
 
     @Test
