@@ -1,4 +1,4 @@
-# KeyScope
+# Key Bro
 
 Real-time musical key detection from the microphone, for Android. Point the phone at a speaker and
 it tells you the key, the scale notes, the Camelot / Open Key code, the reference tuning and a

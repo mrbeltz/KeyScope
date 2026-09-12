@@ -203,7 +203,7 @@ private fun Header(state: EngineState, level: Float) {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            "KeyScope",
+            "Key Bro",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
