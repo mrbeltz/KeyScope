@@ -26,6 +26,26 @@ From the locked reading you can:
   itself when the mic opens, since otherwise it would feed straight into its own reading.
 - **Read the chords** — the seven diatonic triads with roman numerals.
 
+## For producing
+
+- **Files.** Point it at samples, loops or bounces and it runs the same pipeline with no speaker
+  and no room in between, which is simply a better reading than playing the track out loud. Batch
+  a folder and copy the lot out as CSV for a sample library. Uses the storage access framework, so
+  no storage permission is needed.
+- **Project target.** Set the key and tempo you are working in, once, and it persists. Every
+  reading then answers whether it fits and what the move is, rather than leaving you to work it
+  out from the transpose card.
+- **Tap tempo.** The only real answer to the half/double ambiguity an onset autocorrelator will
+  always have. It uses the median interval, so one late tap is discarded rather than averaged in,
+  and it tells you when your taps and the detector are the same tempo an octave apart.
+- **Metronome** at the detected, tapped or project tempo. Beats are placed by sample index rather
+  than scheduled, so it cannot drift.
+- **Progressions** spelled into the detected key and auditionable — `F#m · D · A · E` under
+  `i - VI - III - VII`. Major and minor get different sets.
+- **Live chords.** The current chord and the recent progression, matched against templates from
+  the per-frame chroma the engine already computes. Held to a lower standard than the key readout,
+  for reasons in the section below.
+
 ## Getting it on a phone
 
 The repo builds itself. Every push to `main` runs `.github/workflows/build.yml`, which produces a
@@ -105,7 +125,11 @@ Tempo is a separate path: log-compressed spectral flux at a 256-sample hop, auto
   runners-up line shows you the alternative. Trust a reading more once the LOCK badge appears.
 - Modal and chromatic material (a lot of jazz, a lot of film score) does not have one answer, and a
   24-way major/minor classifier will force one anyway.
-- Tempo is half/double-time prone, as every onset autocorrelator is.
+- Tempo is half/double-time prone, as every onset autocorrelator is. Tap it if it looks wrong.
+- **Chords are the weakest readout and are meant to be.** They move faster than the 743 ms window,
+  so a frame straddling a change sees both at once; a seventh shares three of its four notes with
+  its relative triad; and an inversion is identical to root position in a chroma, which threw the
+  octave away by construction. Read it as a strong hint, not a transcription.
 
 ## Tuning knobs
 
@@ -126,24 +150,36 @@ Everything worth adjusting is a constant near the top of its file:
 - **Internal audio capture.** `AudioPlaybackCaptureConfiguration` plus a `MediaProjection` consent
   prompt would let it analyse audio playing on the phone itself, for apps that allow capture. Many
   music apps set `ALLOW_CAPTURE_BY_NONE`, so it works for some sources and not others.
-- **Named readings and CSV export.** The log already holds timestamped entries; letting you label
-  one and write the set out as CSV is a small addition to `HistoryCard`.
-- **Chord following.** The chroma already carries enough to guess the current chord, not just the
-  key, which would turn the chord chart into a live readout.
+- **MIDI export.** Writing the detected scale or chord progression as a `.mid` would let a reading
+  end up in a DAW rather than in your head. The file format is simple enough to hand-write.
+- **Chords over files.** Chord detection is live-only today; running it over a decoded file would
+  give a whole timeline instead of a rolling eight.
+- **Shorter window for chords.** They currently share the key path's 743 ms frame, which is the
+  main thing limiting their accuracy. A second, shorter FFT would cost little and help a lot.
 
 ## Layout
 
 ```
 app/src/main/java/com/jonny/keyscope/
-  MainActivity.kt            permissions, clipboard, share, keep-screen-on, wiring
+  MainActivity.kt            permissions, clipboard, share, file picking, wiring
   MusicalKey.kt              naming, scale spelling, Camelot / Open Key, chords, transposition
+  Progressions.kt            common progressions as scale degrees, plus their voicings
+  TapTempo.kt                median-interval tempo from taps
   audio/
     KeyScopeEngine.kt        microphone, analysis thread, state, auto-release on lock
     ListeningService.kt      foreground service so it survives app switching
-    ReferenceTone.kt         tonic drone and scale playback at the detected pitch
+    ReferenceTone.kt         polyphonic tonic, scale and chord playback at the detected pitch
+    Metronome.kt             drift-free click track
+    ProjectSettings.kt       the key and tempo you are working in, persisted
+    AudioFileDecoder.kt      MediaExtractor + MediaCodec, streamed and resampled
+    FileAnalyzer.kt          the live pipeline run over a file
+    FileAnalysisController.kt  batch queue and CSV export
     EngineState.kt           the state the UI reads
   dsp/
+    AnalysisConfig.kt        geometry shared by the live and file paths
     Fft.kt                   allocation-free radix-2 FFT
+    Resampler.kt             arbitrary-rate resampling for decoded files
+    ChordDetector.kt         chord templates, key-biased, with commit smoothing
     Decimator.kt             Butterworth low-pass + 4:1 decimation
     ChromaExtractor.kt       HPCP
     ChromaAccumulator.kt     rolling average + tuning estimation
