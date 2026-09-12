@@ -13,7 +13,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -56,7 +55,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -91,7 +89,6 @@ import com.jonny.keyscope.audio.FileAnalyzer
 import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.HistoryEntry
 import com.jonny.keyscope.audio.Project
-import com.jonny.keyscope.audio.YouTubeLink
 import com.jonny.keyscope.dsp.KeyProfile
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -104,7 +101,8 @@ private const val TWO_PANE_WIDTH_DP = 720
 
 /** Everything the screen can ask the app to do, bundled so the signature stays readable. */
 class KeyScopeActions(
-    val toggleListening: () -> Unit,
+    val start: () -> Unit,
+    val stop: () -> Unit,
     val reset: () -> Unit,
     val setWindow: (AnalysisWindow) -> Unit,
     val setProfile: (KeyProfile) -> Unit,
@@ -127,8 +125,6 @@ class KeyScopeActions(
     val shareMidi: (FileAnalyzer.Result) -> Unit,
     val saveMidi: (FileAnalyzer.Result) -> Unit,
     val shareProgressionMidi: (Progression) -> Unit,
-    val playLink: (String) -> Unit,
-    val clearLink: () -> Unit,
     val pickFolder: () -> Unit,
     val previewRenames: () -> Unit,
     val applyRenames: () -> Unit,
@@ -144,7 +140,6 @@ fun KeyScopeScreen(
     tonePlaying: Boolean,
     metronomeRunning: Boolean,
     files: FileAnalysisController.State,
-    linkVideoId: String?,
     renamePlan: List<FileAnalysisController.RenamePlan>,
     actions: KeyScopeActions
 ) {
@@ -194,7 +189,6 @@ fun KeyScopeScreen(
                             ) {
                                 ChromaCard(state)
                                 TempoCard(state, project, metronomeRunning, actions)
-                                LinkCard(state, linkVideoId, hasPermission, actions.playLink, actions.clearLink)
                                 FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
@@ -225,7 +219,6 @@ fun KeyScopeScreen(
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state, project, metronomeRunning, actions)
-                            LinkCard(state, linkVideoId, hasPermission, actions.playLink, actions.clearLink)
                             FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
@@ -240,13 +233,14 @@ fun KeyScopeScreen(
                     }
                 }
 
-                MicButton(
+                Transport(
                     listening = state.listening,
                     level = level,
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 20.dp),
-                    onClick = actions.toggleListening
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp),
+                    onStart = actions.start,
+                    onStop = actions.stop
                 )
             }
         }
@@ -660,7 +654,7 @@ private fun formatSigned(value: Float): String =
 private fun statusLine(state: EngineState, hasPermission: Boolean): String = when {
     !hasPermission -> "MICROPHONE ACCESS NEEDED"
     state.autoStopped && !state.listening -> "LOCKED - MIC RELEASED"
-    !state.listening -> "TAP THE MIC TO START"
+    !state.listening -> "PRESS START"
     state.silent -> "LISTENING - NO AUDIO"
     state.windowFill < 0.4f -> "GATHERING"
     state.locked -> "LOCKED"
@@ -1081,135 +1075,6 @@ private fun TonicPicker(selected: Int?, onSelect: (Int) -> Unit) {
 }
 
 /**
- * Paste a YouTube link, play it out loud, read it with the mic.
- *
- * This is the only route that stays inside YouTube's terms — nothing is downloaded or extracted.
- * It costs real accuracy against the file path because the signal goes through a speaker and a
- * room on the way, so the card says as much rather than pretending otherwise.
- */
-@Composable
-private fun LinkCard(
-    state: EngineState,
-    videoId: String?,
-    hasPermission: Boolean,
-    onPlay: (String) -> Unit,
-    onClear: () -> Unit
-) {
-    var field by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    SectionCard("Link") {
-        if (videoId == null) {
-            Text(
-                "Paste a YouTube link and Key Bro will play it and listen to it.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = field,
-                onValueChange = { field = it; error = null },
-                label = { Text("YouTube link") },
-                singleLine = true,
-                isError = error != null,
-                modifier = Modifier.fillMaxWidth()
-            )
-            error?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = {
-                        val id = YouTubeLink.extractVideoId(field)
-                        if (id == null) {
-                            error = "That does not look like a YouTube link."
-                        } else {
-                            field = ""
-                            onPlay(id)
-                        }
-                    },
-                    enabled = field.isNotBlank() && hasPermission
-                ) { Text("Play and read") }
-                if (!hasPermission) {
-                    Text(
-                        "Needs the microphone first.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Through a speaker and back in through the mic, so expect it to be less certain " +
-                    "than the same track as a file. Nothing is downloaded.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            return@SectionCard
-        }
-
-        var status by remember(videoId) { mutableStateOf<PlayerStatus>(PlayerStatus.Loading) }
-        var playRequest by remember(videoId) { mutableStateOf(0) }
-
-        YouTubePlayer(
-            videoId = videoId,
-            playRequest = playRequest,
-            onStatus = { status = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(10.dp))
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        val failure = status as? PlayerStatus.Failed
-        if (failure != null) {
-            Text(
-                failure.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
-            TextButton(onClick = onClear) { Text("Try another link") }
-            return@SectionCard
-        }
-
-        // Playing but silent to the mic is a different problem from a quiet room, and the fix is
-        // different too, so it gets its own message.
-        val playingButUnheard = status == PlayerStatus.Playing && state.silent
-        Text(
-            when {
-                status == PlayerStatus.Loading -> "Loading the player…"
-                status == PlayerStatus.Buffering -> "Buffering…"
-                status == PlayerStatus.Paused -> "Paused."
-                status == PlayerStatus.Ended -> "Finished."
-                playingButUnheard ->
-                    "Playing, but nothing is reaching the mic. Turn the media volume up, and check " +
-                        "the phone is not silenced or routed to headphones."
-                !state.listening && state.autoStopped -> "Locked — the readout above is the answer."
-                state.locked -> "Locked."
-                else -> "Listening… give it a few seconds."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (playingButUnheard) MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { playRequest++ }) { Text("Play with sound") }
-            TextButton(onClick = onClear) { Text("Different link") }
-        }
-        Text(
-            "Autoplay is never allowed to make sound on its own, so the player is told to unmute. " +
-                "If it is still silent, that button is a real tap and always is allowed.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-/**
  * Batch analysis of files on the device. The same pipeline as the mic, minus the speaker and the
  * room, so this is the accurate way to read anything you already have as a file.
  */
@@ -1476,7 +1341,7 @@ private fun ChordNowCard(state: EngineState) {
         Spacer(Modifier.height(8.dp))
         Text(
             when {
-                !state.listening -> "Chords are read live, so start the mic to follow a progression."
+                !state.listening -> "Chords are read live, so press Start to follow a progression."
                 state.silent -> "Nothing reaching the mic."
                 chord == null -> "Nothing that fits a chord cleanly right now."
                 else -> "A strong hint, not a transcription — inversions and sevenths are genuinely ambiguous in chroma."
@@ -1684,36 +1549,90 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
     }
 }
 
-// ------------------------------------------------------------------ mic button
+// ------------------------------------------------------------------ transport
+
+/**
+ * Explicit start and stop rather than one button that means two things.
+ *
+ * A toggle makes you read its icon to work out what it is about to do. Two buttons with only one
+ * of them live never need interpreting, which is what you want when you are looking at an
+ * instrument rather than at the phone.
+ */
+@Composable
+private fun Transport(
+    listening: Boolean,
+    level: Float,
+    modifier: Modifier,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    val glow by animateFloatAsState(if (listening) level else 0f, tween(120), label = "glow")
+
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TransportButton(
+            icon = Icons.Filled.Mic,
+            label = if (listening) "Listening" else "Start",
+            enabled = !listening,
+            // While live the button carries the input level, so the row itself shows it working.
+            container = if (listening) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.20f + glow * 0.45f)
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+            content = if (listening) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.weight(1f),
+            onClick = onStart
+        )
+        TransportButton(
+            icon = Icons.Filled.StopCircle,
+            label = "Stop",
+            enabled = listening,
+            container = if (listening) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.surfaceVariant,
+            content = if (listening) MaterialTheme.colorScheme.onError
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+            modifier = Modifier.weight(1f),
+            onClick = onStop
+        )
+    }
+}
 
 @Composable
-private fun MicButton(listening: Boolean, level: Float, modifier: Modifier, onClick: () -> Unit) {
-    val glow by animateFloatAsState(if (listening) level else 0f, tween(120), label = "glow")
-    val container = if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    Box(modifier, contentAlignment = Alignment.Center) {
-        if (listening) {
-            Box(
-                Modifier
-                    .size((68 + glow * 26f).dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
-            )
-        }
-        Box(
-            Modifier
-                .size(68.dp)
-                .clip(CircleShape)
-                .background(container)
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                if (listening) Icons.Filled.Mic else Icons.Filled.MicOff,
-                contentDescription = if (listening) "Stop listening" else "Start listening",
-                tint = if (listening) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(30.dp)
-            )
-        }
+private fun TransportButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    container: Color,
+    content: Color,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(container)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 16.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = label, tint = content, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = content
+        )
     }
 }
 

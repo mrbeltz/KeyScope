@@ -96,7 +96,6 @@ class MainActivity : ComponentActivity() {
                 // Saving also goes through the picker, which is what makes Drive a destination
                 // without the app needing a Google sign-in or any Drive API at all.
                 var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
-                var linkVideoId by remember { mutableStateOf<String?>(null) }
                 var renamePlan by remember {
                     mutableStateOf<List<FileAnalysisController.RenamePlan>>(emptyList())
                 }
@@ -130,9 +129,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val actions = KeyScopeActions(
-                    toggleListening = {
+                    start = {
                         when {
-                            state.listening -> ListeningService.stop(context)
+                            state.listening -> Unit
                             !hasPermission -> micLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             else -> {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -153,6 +152,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     },
+                    stop = { ListeningService.stop(context) },
                     reset = KeyScopeEngine::resetAnalysis,
                     setWindow = KeyScopeEngine::setWindow,
                     setProfile = KeyScopeEngine::setProfile,
@@ -246,19 +246,6 @@ class MainActivity : ComponentActivity() {
                         ).show()
                     },
                     cancelRenames = { renamePlan = emptyList() },
-                    playLink = { id ->
-                        // The embed plays out loud and the mic reads it back, so anything else
-                        // coming out of the speaker has to stop first.
-                        ReferenceTone.stop()
-                        Metronome.stop()
-                        linkVideoId = id
-                        KeyScopeEngine.resetAnalysis()
-                        ListeningService.start(context)
-                    },
-                    clearLink = {
-                        linkVideoId = null
-                        ListeningService.stop(context)
-                    },
                     shareProgressionMidi = { progression ->
                         val key = state.key
                         if (key != null) {
@@ -309,7 +296,6 @@ class MainActivity : ComponentActivity() {
                     tonePlaying = tonePlaying,
                     metronomeRunning = metronomeRunning,
                     files = files,
-                    linkVideoId = linkVideoId,
                     renamePlan = renamePlan,
                     actions = actions
                 )

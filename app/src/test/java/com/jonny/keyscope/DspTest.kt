@@ -9,7 +9,6 @@ import com.jonny.keyscope.dsp.KeyDetector
 import com.jonny.keyscope.dsp.Resampler
 import com.jonny.keyscope.audio.FileAnalyzer
 import com.jonny.keyscope.audio.FolderScanner
-import com.jonny.keyscope.audio.YouTubeLink
 import com.jonny.keyscope.midi.MidiExport
 import com.jonny.keyscope.midi.MidiWriter
 import org.junit.Assert.assertEquals
@@ -468,33 +467,6 @@ class DspTest {
 
         val noExtension = resultFor("Pad", MusicalKey(0, Mode.MAJOR), 90f)
         assertEquals("Pad C 90", FolderScanner.proposedName("Pad", noExtension))
-    }
-
-    // ------------------------------------------------------------- links
-
-    @Test
-    fun `pulls video ids out of every link shape`() {
-        val expected = "dQw4w9WgXcQ"
-        listOf(
-            "https://www.youtube.com/watch?v=$expected",
-            "https://youtu.be/$expected",
-            "https://youtu.be/$expected?t=42",
-            "https://www.youtube.com/embed/$expected",
-            "https://www.youtube.com/shorts/$expected",
-            "https://m.youtube.com/watch?feature=share&v=$expected",
-            "  $expected  "
-        ).forEach { input ->
-            assertEquals(input, expected, YouTubeLink.extractVideoId(input))
-        }
-    }
-
-    @Test
-    fun `rejects things that are not youtube links`() {
-        assertEquals(null, YouTubeLink.extractVideoId(""))
-        assertEquals(null, YouTubeLink.extractVideoId("https://example.com/song.mp3"))
-        assertEquals(null, YouTubeLink.extractVideoId("not a link at all"))
-        // Eleven characters is the id length; ten is not an id.
-        assertEquals(null, YouTubeLink.extractVideoId("abcdefghij"))
     }
 
     // ------------------------------------------------------------- midi
