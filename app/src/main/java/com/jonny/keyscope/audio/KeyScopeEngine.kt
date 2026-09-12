@@ -58,6 +58,7 @@ object KeyScopeEngine {
     @Volatile private var running = false
     @Volatile private var resetRequested = false
     @Volatile private var pendingWindow: AnalysisWindow? = null
+    @Volatile private var continuousListening = false
 
     private val detector = KeyDetector()
 
@@ -68,7 +69,7 @@ object KeyScopeEngine {
         if (running) return
         running = true
         val appContext = context.applicationContext
-        _state.update { it.copy(listening = true, error = null) }
+        _state.update { it.copy(listening = true, error = null, autoStopped = false) }
         thread = Thread({ runLoop(appContext) }, "KeyScope-Audio").also {
             it.priority = Thread.MAX_PRIORITY
             it.start()
@@ -87,7 +88,15 @@ object KeyScopeEngine {
     /** Throws away the accumulated average and starts listening fresh. */
     fun resetAnalysis() {
         resetRequested = true
-        _state.update { it.copy(key = null, confidence = 0f, locked = false, windowFill = 0f) }
+        _state.update {
+            it.copy(key = null, confidence = 0f, locked = false, windowFill = 0f, autoStopped = false)
+        }
+    }
+
+    /** When off (the default), the mic releases itself as soon as a lock lands. */
+    fun setContinuous(enabled: Boolean) {
+        continuousListening = enabled
+        _state.update { it.copy(continuousListening = enabled) }
     }
 
     fun setWindow(window: AnalysisWindow) {
@@ -198,6 +207,11 @@ object KeyScopeEngine {
                     val confidenceNow = smoothedConfidence
                     val bpmNow = tempo.bpm
 
+                    // A lock is the answer, so unless asked to keep going, let the mic go. The
+                    // loop exits through its finally block, which drops listening to false and
+                    // lets the service tear its notification down.
+                    val releaseMic = locked && !continuousListening
+
                     _state.update { previous ->
                         val history = if (locked && winner != null &&
                             previous.history.firstOrNull()?.key != winner
@@ -221,8 +235,14 @@ object KeyScopeEngine {
                             bpmConfidence = tempo.confidence,
                             windowFill = fill,
                             silent = silent,
+                            autoStopped = releaseMic,
                             history = history
                         )
+                    }
+
+                    if (releaseMic) {
+                        running = false
+                        break
                     }
                 }
             }

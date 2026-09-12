@@ -1,8 +1,13 @@
 package com.jonny.keyscope.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,14 +44,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,6 +69,7 @@ import com.jonny.keyscope.audio.AnalysisWindow
 import com.jonny.keyscope.audio.EngineState
 import com.jonny.keyscope.audio.HistoryEntry
 import com.jonny.keyscope.dsp.KeyProfile
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -74,6 +87,7 @@ fun KeyScopeScreen(
     onReset: () -> Unit,
     onWindowChange: (AnalysisWindow) -> Unit,
     onProfileChange: (KeyProfile) -> Unit,
+    onContinuousChange: (Boolean) -> Unit,
     onClearHistory: () -> Unit
 ) {
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
@@ -112,7 +126,7 @@ fun KeyScopeScreen(
                             ) {
                                 ChromaCard(state)
                                 TempoCard(state)
-                                ControlsCard(state, onReset, onWindowChange, onProfileChange)
+                                ControlsCard(state, onReset, onWindowChange, onProfileChange, onContinuousChange)
                                 HistoryCard(state.history, onClearHistory)
                                 Spacer(Modifier.height(88.dp))
                             }
@@ -129,7 +143,7 @@ fun KeyScopeScreen(
                             ScaleCard(state.key)
                             CompatibleCard(state.key)
                             TempoCard(state)
-                            ControlsCard(state, onReset, onWindowChange, onProfileChange)
+                            ControlsCard(state, onReset, onWindowChange, onProfileChange, onContinuousChange)
                             HistoryCard(state.history, onClearHistory)
                             Spacer(Modifier.height(96.dp))
                         }
@@ -244,12 +258,14 @@ private fun KeyHeroCard(state: EngineState, hasPermission: Boolean) {
             )
             Spacer(Modifier.height(6.dp))
 
-            Text(
-                key?.shortName ?: "--",
-                style = MaterialTheme.typography.displayLarge,
-                color = accent,
-                textAlign = TextAlign.Center
-            )
+            LockReveal(locked = state.locked, accent = accent) {
+                Text(
+                    key?.shortName ?: "--",
+                    style = MaterialTheme.typography.displayLarge,
+                    color = accent,
+                    textAlign = TextAlign.Center
+                )
+            }
             Text(
                 key?.name ?: "waiting for audio",
                 style = MaterialTheme.typography.titleMedium,
@@ -303,8 +319,59 @@ private fun KeyHeroCard(state: EngineState, hasPermission: Boolean) {
     }
 }
 
+/**
+ * The moment the reading settles. Two rings bloom outward and fade while the key itself springs
+ * up and settles back, with a haptic tick on the same frame so the answer registers even if you
+ * are looking at the instrument rather than the phone.
+ */
+@Composable
+private fun LockReveal(locked: Boolean, accent: Color, content: @Composable () -> Unit) {
+    val bloom = remember { Animatable(0f) }
+    val scale = remember { Animatable(1f) }
+    val haptics = LocalHapticFeedback.current
+
+    LaunchedEffect(locked) {
+        if (!locked) {
+            bloom.snapTo(0f)
+            scale.snapTo(1f)
+            return@LaunchedEffect
+        }
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        launch {
+            bloom.snapTo(0f)
+            bloom.animateTo(1f, tween(1100, easing = FastOutSlowInEasing))
+        }
+        scale.animateTo(1.14f, tween(150, easing = FastOutSlowInEasing))
+        scale.animateTo(
+            1f,
+            spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+        )
+    }
+
+    Box(contentAlignment = Alignment.Center) {
+        if (bloom.value > 0f && bloom.value < 1f) {
+            Canvas(Modifier.matchParentSize()) {
+                val maxRadius = size.minDimension * 1.15f
+                // Two rings, the second trailing the first, so it reads as a pulse not a blip.
+                for (index in 0 until 2) {
+                    val offset = index * 0.22f
+                    val progress = (bloom.value - offset) / (1f - offset)
+                    if (progress <= 0f || progress >= 1f) continue
+                    drawCircle(
+                        color = accent.copy(alpha = 0.5f * (1f - progress) * (1f - progress)),
+                        radius = maxRadius * (0.35f + 0.65f * progress),
+                        style = Stroke(width = (7f * (1f - progress)).coerceAtLeast(1f))
+                    )
+                }
+            }
+        }
+        Box(Modifier.scale(scale.value), contentAlignment = Alignment.Center) { content() }
+    }
+}
+
 private fun statusLine(state: EngineState, hasPermission: Boolean): String = when {
     !hasPermission -> "MICROPHONE ACCESS NEEDED"
+    state.autoStopped && !state.listening -> "LOCKED - MIC RELEASED"
     !state.listening -> "TAP THE MIC TO START"
     state.silent -> "LISTENING - NO AUDIO"
     state.windowFill < 0.4f -> "GATHERING"
@@ -542,9 +609,31 @@ private fun ControlsCard(
     state: EngineState,
     onReset: () -> Unit,
     onWindowChange: (AnalysisWindow) -> Unit,
-    onProfileChange: (KeyProfile) -> Unit
+    onProfileChange: (KeyProfile) -> Unit,
+    onContinuousChange: (Boolean) -> Unit
 ) {
     SectionCard("Analysis") {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Keep listening after lock", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (state.continuousListening) {
+                        "Runs until you stop it, and keeps re-reading as the music changes."
+                    } else {
+                        "Releases the mic the moment a key locks."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = state.continuousListening, onCheckedChange = onContinuousChange)
+        }
+
+        Spacer(Modifier.height(16.dp))
         Text("Averaging window", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
+                                // Starting by hand always means "read this fresh", never "resume
+                                // the average from whatever was in the room a minute ago".
+                                KeyScopeEngine.resetAnalysis()
                                 ListeningService.start(context)
                             }
                         }
@@ -87,6 +90,7 @@ class MainActivity : ComponentActivity() {
                     onReset = KeyScopeEngine::resetAnalysis,
                     onWindowChange = KeyScopeEngine::setWindow,
                     onProfileChange = KeyScopeEngine::setProfile,
+                    onContinuousChange = KeyScopeEngine::setContinuous,
                     onClearHistory = KeyScopeEngine::clearHistory
                 )
             }

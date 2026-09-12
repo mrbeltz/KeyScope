@@ -14,12 +14,24 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.jonny.keyscope.MainActivity
 import com.jonny.keyscope.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Keeps the analysis alive while you switch apps or fold the phone shut. The service does no DSP
  * itself; it just holds the process up and owns the ongoing notification.
  */
 class ListeningService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var engineWatcher: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -43,10 +55,30 @@ class ListeningService : Service() {
             }
         )
         KeyScopeEngine.start(this)
+
+        // The engine releases the mic itself once a key locks. Watch for that so the notification
+        // goes away with it rather than sitting there claiming to be recording.
+        engineWatcher?.cancel()
+        engineWatcher = scope.launch {
+            KeyScopeEngine.state
+                .map { it.listening }
+                .distinctUntilChanged()
+                .drop(1) // the current value is already true; react to the change away from it
+                .collect { listening ->
+                    if (!listening) {
+                        ServiceCompat.stopForeground(
+                            this@ListeningService, ServiceCompat.STOP_FOREGROUND_REMOVE
+                        )
+                        stopSelf()
+                    }
+                }
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        engineWatcher?.cancel()
+        scope.cancel()
         KeyScopeEngine.stop()
         super.onDestroy()
     }

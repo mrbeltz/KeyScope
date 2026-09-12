@@ -36,6 +36,10 @@ data class EngineState(
     val window: AnalysisWindow = AnalysisWindow.NORMAL,
     val profile: KeyProfile = KeyProfile.SHAATH,
     val inputSource: String = "",
+    /** When false, the mic shuts off the moment a lock lands. */
+    val continuousListening: Boolean = false,
+    /** True when the mic released itself on a lock rather than being stopped by hand. */
+    val autoStopped: Boolean = false,
     val history: List<HistoryEntry> = emptyList(),
     val error: String? = null
 ) {
