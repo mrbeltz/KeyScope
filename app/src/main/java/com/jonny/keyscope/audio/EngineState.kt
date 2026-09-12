@@ -44,4 +44,19 @@ data class EngineState(
     val error: String? = null
 ) {
     val referenceHz: Float get() = (440.0 * Math.pow(2.0, tuningCents / 1200.0)).toFloat()
+
+    /** The reading as one line, for the clipboard or a share sheet. */
+    val summaryLine: String
+        get() {
+            val key = key ?: return "No key detected"
+            return buildString {
+                append(key.name)
+                append(" · ")
+                append(key.camelot)
+                append(" · Open Key ")
+                append(key.openKey)
+                if (bpm > 0f) append(" · ${Math.round(bpm)} BPM")
+                if (Math.abs(tuningCents) > 4f) append(" · A=${Math.round(referenceHz)} Hz")
+            }
+        }
 }

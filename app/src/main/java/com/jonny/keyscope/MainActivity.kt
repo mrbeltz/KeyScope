@@ -1,10 +1,14 @@
 package com.jonny.keyscope
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -20,6 +24,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jonny.keyscope.audio.KeyScopeEngine
 import com.jonny.keyscope.audio.ListeningService
+import com.jonny.keyscope.audio.ReferenceTone
 import com.jonny.keyscope.ui.KeyScopeScreen
 import com.jonny.keyscope.ui.KeyScopeTheme
 
@@ -34,6 +39,7 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val state by KeyScopeEngine.state.collectAsStateWithLifecycle()
                 val level by KeyScopeEngine.level.collectAsStateWithLifecycle()
+                val tonePlaying by ReferenceTone.playing.collectAsStateWithLifecycle()
 
                 var hasPermission by remember {
                     mutableStateOf(
@@ -80,6 +86,9 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
+                                // A tone playing into an open mic is a feedback loop that would
+                                // poison its own reading.
+                                ReferenceTone.stop()
                                 // Starting by hand always means "read this fresh", never "resume
                                 // the average from whatever was in the room a minute ago".
                                 KeyScopeEngine.resetAnalysis()
@@ -91,7 +100,49 @@ class MainActivity : ComponentActivity() {
                     onWindowChange = KeyScopeEngine::setWindow,
                     onProfileChange = KeyScopeEngine::setProfile,
                     onContinuousChange = KeyScopeEngine::setContinuous,
-                    onClearHistory = KeyScopeEngine::clearHistory
+                    onClearHistory = KeyScopeEngine::clearHistory,
+                    tonePlaying = tonePlaying,
+                    onCopy = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Key", state.summaryLine))
+                        // Android 13 and up shows its own copy confirmation, so do not double up.
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onShare = {
+                        val share = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, state.summaryLine)
+                        }
+                        context.startActivity(Intent.createChooser(share, null))
+                    },
+                    onToneToggle = {
+                        val key = state.key
+                        if (tonePlaying || key == null) {
+                            ReferenceTone.stop()
+                        } else {
+                            ReferenceTone.startDrone(
+                                MusicalKey.frequencyOf(key.tonic, state.referenceHz)
+                            )
+                        }
+                    },
+                    onPlayScale = {
+                        val key = state.key
+                        if (key != null) {
+                            // Tonic up to tonic, so the octave closes the phrase.
+                            val degrees = key.scaleNotes.map { MusicalKey.pitchClassOf(it) }
+                            var previous = -1
+                            var octave = 0
+                            val frequencies = degrees.map { pc ->
+                                if (previous >= 0 && pc <= previous) octave++
+                                previous = pc
+                                MusicalKey.frequencyOf(pc, state.referenceHz) *
+                                    Math.pow(2.0, octave.toDouble()).toFloat()
+                            } + MusicalKey.frequencyOf(key.tonic, state.referenceHz) * 2f
+                            ReferenceTone.playScale(frequencies)
+                        }
+                    }
                 )
             }
         }

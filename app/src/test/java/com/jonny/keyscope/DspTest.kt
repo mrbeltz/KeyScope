@@ -168,6 +168,74 @@ class DspTest {
     }
 
     @Test
+    fun `builds the diatonic chords of a key`() {
+        assertEquals(
+            listOf("C", "Dm", "Em", "F", "G", "Am", "Bdim"),
+            MusicalKey(0, Mode.MAJOR).diatonicChords.map { it.name }
+        )
+        assertEquals(
+            listOf("I", "ii", "iii", "IV", "V", "vi", "vii°"),
+            MusicalKey(0, Mode.MAJOR).diatonicChords.map { it.numeral }
+        )
+        assertEquals(
+            listOf("Am", "Bdim", "C", "Dm", "Em", "F", "G"),
+            MusicalKey(9, Mode.MINOR).diatonicChords.map { it.name }
+        )
+        assertEquals(
+            listOf("i", "ii°", "III", "iv", "v", "VI", "VII"),
+            MusicalKey(9, Mode.MINOR).diatonicChords.map { it.numeral }
+        )
+    }
+
+    @Test
+    fun `transposition takes the shortest path`() {
+        val cMajor = MusicalKey(0, Mode.MAJOR)
+        assertEquals(0, cMajor.semitonesTo(cMajor))
+        assertEquals(2, cMajor.semitonesTo(MusicalKey(2, Mode.MAJOR)))   // up to D
+        assertEquals(-5, cMajor.semitonesTo(MusicalKey(7, Mode.MAJOR)))  // G is nearer downward
+        assertEquals(-1, cMajor.semitonesTo(MusicalKey(11, Mode.MAJOR))) // down to B
+
+        // Every target stays inside the range that will not wreck a track.
+        for (pc in 0 until 12) {
+            val shift = cMajor.semitonesTo(MusicalKey(pc, Mode.MAJOR))
+            assertTrue("shift $shift for pc $pc", shift in -6..5)
+        }
+    }
+
+    @Test
+    fun `varispeed percentage matches the semitone move`() {
+        val cMajor = MusicalKey(0, Mode.MAJOR)
+        // One semitone up on a turntable is the classic +5.95%.
+        val up = cMajor.varispeedPercentTo(MusicalKey(1, Mode.MAJOR))
+        assertTrue("got $up", abs(up - 5.946f) < 0.01f)
+        // And the reciprocal move downward is a slightly smaller number, not the same one.
+        val down = cMajor.varispeedPercentTo(MusicalKey(11, Mode.MAJOR))
+        assertTrue("got $down", abs(down + 5.613f) < 0.01f)
+    }
+
+    @Test
+    fun `note names round-trip to pitch classes`() {
+        assertEquals(0, MusicalKey.pitchClassOf("C"))
+        assertEquals(6, MusicalKey.pitchClassOf("F#"))
+        assertEquals(10, MusicalKey.pitchClassOf("Bb"))
+        for (pc in 0 until 12) {
+            for (mode in Mode.entries) {
+                val key = MusicalKey(pc, mode)
+                assertEquals(key.name, pc, MusicalKey.pitchClassOf(key.tonicName))
+            }
+        }
+    }
+
+    @Test
+    fun `reference frequencies follow the detected tuning`() {
+        // A in the octave above middle C is A4 = 440 at standard pitch.
+        assertEquals(440.0, MusicalKey.frequencyOf(9, 440f).toDouble(), 0.01)
+        assertEquals(261.626, MusicalKey.frequencyOf(0, 440f).toDouble(), 0.01)
+        // A record cut to A=432 should sound its tonic proportionally flat.
+        assertEquals(432.0, MusicalKey.frequencyOf(9, 432f).toDouble(), 0.01)
+    }
+
+    @Test
     fun `relative keys are reciprocal`() {
         for (pc in 0 until 12) {
             for (mode in Mode.entries) {

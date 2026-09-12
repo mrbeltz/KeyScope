@@ -31,11 +31,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -50,6 +55,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,8 +95,17 @@ fun KeyScopeScreen(
     onWindowChange: (AnalysisWindow) -> Unit,
     onProfileChange: (KeyProfile) -> Unit,
     onContinuousChange: (Boolean) -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: () -> Unit,
+    tonePlaying: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onToneToggle: () -> Unit,
+    onPlayScale: () -> Unit
 ) {
+    var transposeTarget by remember(state.key) { mutableStateOf<Int?>(null) }
+    val actions: @Composable () -> Unit = {
+        ResultActions(state, tonePlaying, onCopy, onShare, onToneToggle, onPlayScale)
+    }
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -115,8 +131,11 @@ fun KeyScopeScreen(
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 KeyHeroCard(state, hasPermission)
+                                actions()
                                 ScaleCard(state.key)
+                                ChordsCard(state.key)
                                 CompatibleCard(state.key)
+                                TransposeCard(state, transposeTarget) { transposeTarget = it }
                             }
                             Column(
                                 Modifier
@@ -139,9 +158,12 @@ fun KeyScopeScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             KeyHeroCard(state, hasPermission)
+                            actions()
                             ChromaCard(state)
                             ScaleCard(state.key)
+                            ChordsCard(state.key)
                             CompatibleCard(state.key)
+                            TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state)
                             ControlsCard(state, onReset, onWindowChange, onProfileChange, onContinuousChange)
                             HistoryCard(state.history, onClearHistory)
@@ -368,6 +390,204 @@ private fun LockReveal(locked: Boolean, accent: Color, content: @Composable () -
         Box(Modifier.scale(scale.value), contentAlignment = Alignment.Center) { content() }
     }
 }
+
+/** Copy, share, and sound the result -- the three things worth doing once a reading lands. */
+@Composable
+private fun ResultActions(
+    state: EngineState,
+    tonePlaying: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onToneToggle: () -> Unit,
+    onPlayScale: () -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        ActionButton(Icons.Filled.ContentCopy, "Copy", Modifier.weight(1f), onCopy)
+        ActionButton(Icons.Filled.Share, "Share", Modifier.weight(1f), onShare)
+        ActionButton(
+            if (tonePlaying) Icons.Filled.StopCircle else Icons.Filled.VolumeUp,
+            if (tonePlaying) "Stop" else "Tonic",
+            Modifier.weight(1f),
+            onToneToggle,
+            highlighted = tonePlaying
+        )
+        ActionButton(Icons.Filled.PlayArrow, "Scale", Modifier.weight(1f), onPlayScale)
+    }
+    if (state.listening) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Playing a tone while the mic is open will feed back into the reading.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+    }
+}
+
+@Composable
+private fun ActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    highlighted: Boolean = false
+) {
+    val tint = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (highlighted) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.height(3.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
+    }
+}
+
+/**
+ * What it takes to get from the detected key to a target one: the semitone move, and the tempo
+ * that a varispeed pitch drags along with it.
+ */
+@Composable
+private fun TransposeCard(state: EngineState, target: Int?, onTargetChange: (Int?) -> Unit) {
+    val key = state.key ?: return
+    SectionCard("Transpose to") {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            for (pc in 0 until 12) {
+                val selected = target == pc
+                val inKey = pc == key.tonic
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(
+                            when {
+                                selected -> MaterialTheme.colorScheme.primary
+                                inKey -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            }
+                        )
+                        .clickable { onTargetChange(if (selected) null else pc) }
+                        .padding(vertical = 9.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        MusicalKey.CHROMA_LABELS[pc],
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = if (selected) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        if (target == null) {
+            Text(
+                "Pick a target tonic. Mode stays ${if (key.mode == Mode.MAJOR) "major" else "minor"} " +
+                    "-- pitching cannot turn one into the other, so route through " +
+                    "${key.relative.shortName} if you need to change it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@SectionCard
+        }
+
+        val targetKey = MusicalKey(target, key.mode)
+        val semitones = key.semitonesTo(targetKey)
+        val percent = key.varispeedPercentTo(targetKey)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (semitones == 0) "Same key" else {
+                        (if (semitones > 0) "+$semitones" else "$semitones") +
+                            " semitone" + (if (abs(semitones) == 1) "" else "s")
+                    },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "${key.shortName} ${key.camelot}  ->  ${targetKey.shortName} ${targetKey.camelot}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Varispeed: ${formatSigned(percent)}%" +
+                if (state.bpm > 0f) {
+                    "  ->  ${String.format(Locale.US, "%.1f", state.bpm * (1f + percent / 100f))} BPM"
+                } else "",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            "With key lock on, tempo is unchanged and only the pitch moves.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** The seven chords of the key, for writing or jamming over the top. */
+@Composable
+private fun ChordsCard(key: MusicalKey?) {
+    SectionCard("Chords in this key") {
+        if (key == null) {
+            Text(
+                "The diatonic chords will appear here once a key is detected.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            return@SectionCard
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+            key.diatonicChords.forEachIndexed { degree, chord ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(
+                            if (degree == 0) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        chord.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontSize = 13.sp,
+                        fontWeight = if (degree == 0) FontWeight.Bold else FontWeight.Normal
+                    )
+                    Text(
+                        chord.numeral,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatSigned(value: Float): String =
+    (if (value >= 0f) "+" else "") + String.format(Locale.US, "%.2f", value)
 
 private fun statusLine(state: EngineState, hasPermission: Boolean): String = when {
     !hasPermission -> "MICROPHONE ACCESS NEEDED"

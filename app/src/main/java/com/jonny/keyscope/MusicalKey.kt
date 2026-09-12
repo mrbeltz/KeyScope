@@ -2,6 +2,9 @@ package com.jonny.keyscope
 
 enum class Mode { MAJOR, MINOR }
 
+/** One chord of a key: its roman numeral and its actual name, e.g. "vi" and "Dm". */
+data class DiatonicChord(val numeral: String, val name: String)
+
 /**
  * A key, plus every way a musician or DJ might want it written down.
  *
@@ -51,12 +54,47 @@ data class MusicalKey(val tonic: Int, val mode: Mode) {
             MusicalKey(Math.floorMod(tonic + 5, 12), mode)
         )
 
+    /** The seven chords built on the scale, for playing or writing over the top. */
+    val diatonicChords: List<DiatonicChord>
+        get() {
+            val notes = scaleNotes
+            val pitches = notes.map { pitchClassOf(it) }
+            return List(7) { degree ->
+                val root = pitches[degree]
+                val third = Math.floorMod(pitches[(degree + 2) % 7] - root, 12)
+                val fifth = Math.floorMod(pitches[(degree + 4) % 7] - root, 12)
+                val numeral = ROMAN[degree]
+                when {
+                    third == 3 && fifth == 6 ->
+                        DiatonicChord(numeral.lowercase() + "°", notes[degree] + "dim")
+                    third == 3 -> DiatonicChord(numeral.lowercase(), notes[degree] + "m")
+                    third == 4 && fifth == 8 ->
+                        DiatonicChord("$numeral+", notes[degree] + "aug")
+                    else -> DiatonicChord(numeral, notes[degree])
+                }
+            }
+        }
+
+    /**
+     * Shortest signed distance to [target] in semitones, -6..+5. Shortest rather than always
+     * upward because pitching a deck down four is the same move as up eight, and the small
+     * number is the one that will not wreck the track.
+     */
+    fun semitonesTo(target: MusicalKey): Int =
+        Math.floorMod(target.tonic - tonic + 6, 12) - 6
+
+    /** Same tonic distance, expressed as the tempo change a varispeed pitch would drag along. */
+    fun varispeedPercentTo(target: MusicalKey): Float =
+        ((Math.pow(2.0, semitonesTo(target) / 12.0) - 1.0) * 100.0).toFloat()
+
     companion object {
         private val MAJOR_NAMES = arrayOf("C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B")
         private val MINOR_NAMES = arrayOf("C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B")
 
         private val MAJOR_CAMELOT = intArrayOf(8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1)
         private val MINOR_CAMELOT = intArrayOf(5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10)
+
+        private val ROMAN = arrayOf("I", "II", "III", "IV", "V", "VI", "VII")
 
         private val LETTERS = "CDEFGAB"
         private val LETTER_PC = intArrayOf(0, 2, 4, 5, 7, 9, 11)
@@ -65,6 +103,22 @@ data class MusicalKey(val tonic: Int, val mode: Mode) {
 
         /** Pitch-class names for the chroma display; sharps only, since there is no key context. */
         val CHROMA_LABELS = arrayOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+        /** Pitch class of a spelled note name such as "Bb" or "F#". */
+        fun pitchClassOf(name: String): Int {
+            val letter = LETTERS.indexOf(name[0])
+            if (letter < 0) return 0
+            return Math.floorMod(LETTER_PC[letter] + accidentalValue(name), 12)
+        }
+
+        /**
+         * Frequency of a pitch class in the octave above middle C, at the given reference pitch.
+         * That octave because a phone speaker cannot usefully reproduce a tonic an octave down.
+         */
+        fun frequencyOf(pitchClass: Int, referenceHz: Float = 440f): Float {
+            val midi = 60 + Math.floorMod(pitchClass, 12)
+            return (referenceHz * Math.pow(2.0, (midi - 69) / 12.0)).toFloat()
+        }
 
         private fun accidentalValue(name: String): Int {
             var v = 0
