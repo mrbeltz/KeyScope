@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Process
 import android.util.Log
 import com.jonny.keyscope.MusicalKey
+import com.jonny.keyscope.dsp.AnalysisConfig
 import com.jonny.keyscope.dsp.ChromaAccumulator
 import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Decimator
@@ -34,10 +35,12 @@ object KeyScopeEngine {
     private const val TAG = "KeyScopeEngine"
 
     private const val INPUT_RATE = 44100
-    private const val DECIMATION = 4
-    private const val WORK_RATE = INPUT_RATE / DECIMATION   // 11025 Hz
-    private const val FFT_SIZE = 8192                       // 743 ms window
-    private const val HOP = 2048                            // 186 ms hop
+
+    // Shared with the file path, so a sample and the room it is played in are measured identically.
+    private const val WORK_RATE = AnalysisConfig.WORK_RATE
+    private const val DECIMATION = INPUT_RATE / WORK_RATE
+    private const val FFT_SIZE = AnalysisConfig.FFT_SIZE
+    private const val HOP = AnalysisConfig.HOP
     private const val READ_FRAMES = 2048
 
     /** Frames below this RMS are treated as silence and never enter the average. */

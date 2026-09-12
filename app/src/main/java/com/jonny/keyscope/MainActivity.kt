@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.KeyScopeEngine
 import com.jonny.keyscope.audio.ListeningService
 import com.jonny.keyscope.audio.Metronome
@@ -46,6 +47,7 @@ class MainActivity : ComponentActivity() {
                 val tonePlaying by ReferenceTone.playing.collectAsStateWithLifecycle()
                 val metronomeRunning by Metronome.running.collectAsStateWithLifecycle()
                 val project by ProjectSettings.state.collectAsStateWithLifecycle()
+                val files by FileAnalysisController.state.collectAsStateWithLifecycle()
 
                 var hasPermission by remember {
                     mutableStateOf(
@@ -65,6 +67,15 @@ class MainActivity : ComponentActivity() {
                 val notificationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) { /* The service runs either way; this only affects the ongoing notification. */ }
+
+                // Storage access framework, so no storage permission is needed at all.
+                val filePicker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenMultipleDocuments()
+                ) { uris ->
+                    if (uris.isNotEmpty()) {
+                        FileAnalysisController.analyze(context, uris, state.profile)
+                    }
+                }
 
                 // Nobody wants the screen to sleep mid-set while the reading is still settling.
                 DisposableEffect(state.listening) {
@@ -148,6 +159,20 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
+                    pickFiles = {
+                        filePicker.launch(arrayOf("audio/*"))
+                    },
+                    copyFilesCsv = {
+                        val csv = FileAnalysisController.resultsAsCsv()
+                        if (csv.isNotEmpty()) {
+                            val clipboard = context.getSystemService(ClipboardManager::class.java)
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Key Bro analysis", csv))
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    clearFiles = FileAnalysisController::clearResults,
                     playScale = {
                         val key = state.key
                         if (key != null) {
@@ -174,6 +199,7 @@ class MainActivity : ComponentActivity() {
                     project = project,
                     tonePlaying = tonePlaying,
                     metronomeRunning = metronomeRunning,
+                    files = files,
                     actions = actions
                 )
             }

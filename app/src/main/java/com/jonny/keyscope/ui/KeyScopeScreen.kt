@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -80,6 +81,7 @@ import com.jonny.keyscope.TapTempo
 import com.jonny.keyscope.MusicalKey
 import com.jonny.keyscope.audio.AnalysisWindow
 import com.jonny.keyscope.audio.EngineState
+import com.jonny.keyscope.audio.FileAnalysisController
 import com.jonny.keyscope.audio.HistoryEntry
 import com.jonny.keyscope.audio.Project
 import com.jonny.keyscope.dsp.KeyProfile
@@ -107,7 +109,10 @@ class KeyScopeActions(
     val playProgression: (Progression) -> Unit,
     val setProjectKey: (MusicalKey?) -> Unit,
     val setProjectBpm: (Float) -> Unit,
-    val toggleMetronome: (Float) -> Unit
+    val toggleMetronome: (Float) -> Unit,
+    val pickFiles: () -> Unit,
+    val copyFilesCsv: () -> Unit,
+    val clearFiles: () -> Unit
 )
 
 @Composable
@@ -118,6 +123,7 @@ fun KeyScopeScreen(
     project: Project,
     tonePlaying: Boolean,
     metronomeRunning: Boolean,
+    files: FileAnalysisController.State,
     actions: KeyScopeActions
 ) {
     var transposeTarget by remember(state.key) { mutableStateOf<Int?>(null) }
@@ -165,6 +171,7 @@ fun KeyScopeScreen(
                             ) {
                                 ChromaCard(state)
                                 TempoCard(state, project, metronomeRunning, actions)
+                                FilesCard(files, actions.pickFiles, actions.copyFilesCsv, actions.clearFiles, actions.setProjectKey)
                                 ControlsCard(state, actions)
                                 HistoryCard(state.history, actions.clearHistory)
                                 Spacer(Modifier.height(88.dp))
@@ -187,6 +194,7 @@ fun KeyScopeScreen(
                             CompatibleCard(state.key)
                             TransposeCard(state, transposeTarget) { transposeTarget = it }
                             TempoCard(state, project, metronomeRunning, actions)
+                            FilesCard(files, actions.pickFiles, actions.copyFilesCsv, actions.clearFiles, actions.setProjectKey)
                             ControlsCard(state, actions)
                             HistoryCard(state.history, actions.clearHistory)
                             Spacer(Modifier.height(96.dp))
@@ -1029,6 +1037,96 @@ private fun TonicPicker(selected: Int?, onSelect: (Int) -> Unit) {
                     color = if (on) MaterialTheme.colorScheme.onPrimary
                     else MaterialTheme.colorScheme.onSurface
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Batch analysis of files on the device. The same pipeline as the mic, minus the speaker and the
+ * room, so this is the accurate way to read anything you already have as a file.
+ */
+@Composable
+private fun FilesCard(
+    files: FileAnalysisController.State,
+    onPick: () -> Unit,
+    onCopyCsv: () -> Unit,
+    onClear: () -> Unit,
+    onUseAsProject: (MusicalKey) -> Unit
+) {
+    SectionCard("Files") {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("Analyse samples and bounces", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "No speaker, no room, no mic — a cleaner reading than playing it out loud.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            ActionButton(Icons.Filled.LibraryMusic, "Pick", Modifier.width(86.dp)) { onPick() }
+        }
+
+        if (files.running) {
+            Spacer(Modifier.height(12.dp))
+            LabeledBar(
+                "Analysing ${files.done + 1} of ${files.total}",
+                files.progress,
+                MaterialTheme.colorScheme.primary
+            )
+            if (files.current.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    files.current,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+        }
+
+        if (files.results.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            files.results.forEach { result ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = result.key != null) {
+                            result.key?.let(onUseAsProject)
+                        }
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(result.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                        Text(
+                            result.summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (result.error != null) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    result.key?.let { key ->
+                        Text(
+                            key.shortName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Tap a result to make it the project key.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row {
+                TextButton(onClick = onCopyCsv) { Text("Copy as CSV") }
+                TextButton(onClick = onClear) { Text("Clear") }
             }
         }
     }

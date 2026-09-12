@@ -4,6 +4,7 @@ import com.jonny.keyscope.dsp.ChromaAccumulator
 import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Fft
 import com.jonny.keyscope.dsp.KeyDetector
+import com.jonny.keyscope.dsp.Resampler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -233,6 +234,42 @@ class DspTest {
         assertEquals(261.626, MusicalKey.frequencyOf(0, 440f).toDouble(), 0.01)
         // A record cut to A=432 should sound its tonic proportionally flat.
         assertEquals(432.0, MusicalKey.frequencyOf(9, 432f).toDouble(), 0.01)
+    }
+
+    @Test
+    fun `resampling preserves the pitch of a tone`() {
+        // A 440 Hz tone crosses zero 880 times a second whatever the sample rate.
+        val source = 48000
+        val input = FloatArray(source) { sin(2.0 * PI * 440.0 * it / source).toFloat() }
+        val resampler = Resampler(source, sampleRate)
+        val output = FloatArray(resampler.maxOutput(input.size))
+        val written = resampler.process(input, input.size, output)
+
+        val expectedLength = sampleRate
+        assertTrue("wrote $written, expected about $expectedLength", abs(written - expectedLength) < 20)
+
+        var crossings = 0
+        for (i in 1 until written) {
+            if ((output[i - 1] < 0f) != (output[i] < 0f)) crossings++
+        }
+        assertTrue("counted $crossings crossings, expected about 880", abs(crossings - 880) < 12)
+    }
+
+    @Test
+    fun `resampling rejects content above the new nyquist`() {
+        // 7 kHz cannot survive a trip to 11.025 kHz; it must be filtered away rather than folded
+        // back down as a phantom low tone that would corrupt the chroma.
+        val source = 48000
+        val input = FloatArray(source) { sin(2.0 * PI * 7000.0 * it / source).toFloat() }
+        val resampler = Resampler(source, sampleRate)
+        val output = FloatArray(resampler.maxOutput(input.size))
+        val written = resampler.process(input, input.size, output)
+
+        var energy = 0.0
+        // Skip the filter's start-up transient.
+        for (i in 500 until written) energy += output[i] * output[i].toDouble()
+        val rms = sqrt(energy / (written - 500))
+        assertTrue("survived at rms $rms", rms < 0.02)
     }
 
     @Test
