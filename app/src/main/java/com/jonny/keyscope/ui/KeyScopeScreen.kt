@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Lock
@@ -127,7 +128,11 @@ class KeyScopeActions(
     val saveMidi: (FileAnalyzer.Result) -> Unit,
     val shareProgressionMidi: (Progression) -> Unit,
     val playLink: (String) -> Unit,
-    val clearLink: () -> Unit
+    val clearLink: () -> Unit,
+    val pickFolder: () -> Unit,
+    val previewRenames: () -> Unit,
+    val applyRenames: () -> Unit,
+    val cancelRenames: () -> Unit
 )
 
 @Composable
@@ -140,6 +145,7 @@ fun KeyScopeScreen(
     metronomeRunning: Boolean,
     files: FileAnalysisController.State,
     linkVideoId: String?,
+    renamePlan: List<FileAnalysisController.RenamePlan>,
     actions: KeyScopeActions
 ) {
     var transposeTarget by remember(state.key) { mutableStateOf<Int?>(null) }
@@ -192,7 +198,9 @@ fun KeyScopeScreen(
                                 FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
-                                actions.shareResult, actions.shareMidi, actions.saveMidi
+                                actions.shareResult, actions.shareMidi, actions.saveMidi,
+                                actions.pickFolder, renamePlan, actions.previewRenames,
+                                actions.applyRenames, actions.cancelRenames
                             )
                                 ControlsCard(state, actions)
                                 HistoryCard(state.history, actions.clearHistory)
@@ -221,7 +229,9 @@ fun KeyScopeScreen(
                             FilesCard(
                                 files, actions.pickFiles, actions.copyFilesCsv, actions.exportCsv,
                                 actions.shareCsv, actions.clearFiles, actions.setProjectKey,
-                                actions.shareResult, actions.shareMidi, actions.saveMidi
+                                actions.shareResult, actions.shareMidi, actions.saveMidi,
+                                actions.pickFolder, renamePlan, actions.previewRenames,
+                                actions.applyRenames, actions.cancelRenames
                             )
                             ControlsCard(state, actions)
                             HistoryCard(state.history, actions.clearHistory)
@@ -1177,7 +1187,12 @@ private fun FilesCard(
     onUseAsProject: (MusicalKey) -> Unit,
     onShareResult: (FileAnalyzer.Result) -> Unit,
     onShareMidi: (FileAnalyzer.Result) -> Unit,
-    onSaveMidi: (FileAnalyzer.Result) -> Unit
+    onSaveMidi: (FileAnalyzer.Result) -> Unit,
+    onPickFolder: () -> Unit,
+    renamePlan: List<FileAnalysisController.RenamePlan>,
+    onPreviewRenames: () -> Unit,
+    onApplyRenames: () -> Unit,
+    onCancelRenames: () -> Unit
 ) {
     SectionCard("Files") {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1190,7 +1205,9 @@ private fun FilesCard(
                 )
             }
             Spacer(Modifier.width(10.dp))
-            ActionButton(Icons.Filled.LibraryMusic, "Pick", Modifier.width(86.dp)) { onPick() }
+            ActionButton(Icons.Filled.LibraryMusic, "Files", Modifier.width(78.dp)) { onPick() }
+            Spacer(Modifier.width(6.dp))
+            ActionButton(Icons.Filled.FolderOpen, "Folder", Modifier.width(78.dp)) { onPickFolder() }
         }
 
         if (files.running) {
@@ -1305,6 +1322,72 @@ private fun FilesCard(
                 TextButton(onClick = onCopyCsv) { Text("Copy") }
                 TextButton(onClick = onClear) { Text("Clear") }
             }
+
+            RenameSection(renamePlan, onPreviewRenames, onApplyRenames, onCancelRenames)
+        }
+    }
+}
+
+/**
+ * Renaming is the one thing in the app that changes files you already had, so it never happens
+ * on a single tap: the full list of before and after names is shown first and has to be confirmed.
+ */
+@Composable
+private fun RenameSection(
+    plan: List<FileAnalysisController.RenamePlan>,
+    onPreview: () -> Unit,
+    onApply: () -> Unit,
+    onCancel: () -> Unit
+) {
+    if (plan.isEmpty()) {
+        TextButton(onClick = onPreview) { Text("Rename files with key and tempo…") }
+        return
+    }
+
+    Spacer(Modifier.height(10.dp))
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp)
+    ) {
+        Text(
+            "RENAMING ${plan.size} FILE${if (plan.size == 1) "" else "S"}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+        Spacer(Modifier.height(8.dp))
+        plan.take(12).forEach { entry ->
+            Text(
+                entry.from,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            Text(
+                "→  ${entry.to}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        if (plan.size > 12) {
+            Text(
+                "and ${plan.size - 12} more",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            "This renames the files on your device. It cannot be undone from here.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+        Row {
+            TextButton(onClick = onApply) { Text("Rename ${plan.size}") }
+            TextButton(onClick = onCancel) { Text("Cancel") }
         }
     }
 }

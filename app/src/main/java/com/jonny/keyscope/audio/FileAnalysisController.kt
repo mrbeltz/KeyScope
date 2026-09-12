@@ -38,6 +38,9 @@ object FileAnalysisController {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** Source document for each result, kept so a rename knows what to act on. */
+    private val sources = HashMap<String, Uri>()
+
     fun analyze(context: Context, uris: List<Uri>, profile: KeyProfile) {
         if (uris.isEmpty()) return
         cancel()
@@ -54,6 +57,7 @@ object FileAnalysisController {
                 _state.update { it.copy(current = name) }
 
                 val result = FileAnalyzer.analyze(appContext, uri, profile)
+                sources[result.name] = uri
 
                 _state.update {
                     it.copy(done = it.done + 1, results = listOf(result) + it.results)
@@ -61,6 +65,63 @@ object FileAnalysisController {
             }
             _state.update { it.copy(running = false, current = "") }
         }
+    }
+
+    /** Everything audio inside a folder you granted, analysed in name order. */
+    fun analyzeFolder(context: Context, treeUri: Uri, profile: KeyProfile) {
+        cancel()
+        val appContext = context.applicationContext
+        _state.update { it.copy(running = true, done = 0, total = 0, current = "Reading folder…") }
+
+        job = scope.launch {
+            val entries = FolderScanner.listAudio(appContext, treeUri)
+            if (entries.isEmpty()) {
+                _state.update {
+                    it.copy(running = false, current = "", total = 0)
+                }
+                return@launch
+            }
+            _state.update { it.copy(total = entries.size, current = "") }
+
+            for (entry in entries) {
+                ensureActive()
+                _state.update { it.copy(current = entry.name) }
+                val result = FileAnalyzer.analyze(appContext, entry.uri, profile)
+                sources[result.name] = entry.uri
+                _state.update {
+                    it.copy(done = it.done + 1, results = listOf(result) + it.results)
+                }
+            }
+            _state.update { it.copy(running = false, current = "") }
+        }
+    }
+
+    data class RenamePlan(val uri: Uri, val from: String, val to: String)
+
+    /**
+     * What renaming would do. Never applied without being shown first — this is the one operation
+     * in the app that changes something you already had.
+     */
+    fun renamePlan(): List<RenamePlan> = _state.value.results.mapNotNull { result ->
+        val uri = sources[result.name] ?: return@mapNotNull null
+        val proposed = FolderScanner.proposedName(result.name, result) ?: return@mapNotNull null
+        RenamePlan(uri, result.name, proposed)
+    }
+
+    /** @return how many were actually renamed. */
+    fun applyRenames(context: Context, plans: List<RenamePlan>): Int {
+        var renamed = 0
+        val updated = _state.value.results.toMutableList()
+        for (plan in plans) {
+            val newName = FolderScanner.rename(context, plan.uri, plan.to) ?: continue
+            renamed++
+            sources.remove(plan.from)
+            sources[newName] = plan.uri
+            val index = updated.indexOfFirst { it.name == plan.from }
+            if (index >= 0) updated[index] = updated[index].copy(name = newName)
+        }
+        _state.update { it.copy(results = updated) }
+        return renamed
     }
 
     fun cancel() {
@@ -71,6 +132,7 @@ object FileAnalysisController {
 
     fun clearResults() {
         cancel()
+        sources.clear()
         _state.value = State()
     }
 

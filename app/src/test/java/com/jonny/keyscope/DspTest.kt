@@ -7,6 +7,8 @@ import com.jonny.keyscope.dsp.ChromaExtractor
 import com.jonny.keyscope.dsp.Fft
 import com.jonny.keyscope.dsp.KeyDetector
 import com.jonny.keyscope.dsp.Resampler
+import com.jonny.keyscope.audio.FileAnalyzer
+import com.jonny.keyscope.audio.FolderScanner
 import com.jonny.keyscope.audio.YouTubeLink
 import com.jonny.keyscope.midi.MidiExport
 import com.jonny.keyscope.midi.MidiWriter
@@ -434,6 +436,38 @@ class DspTest {
                 assertEquals(key, key.relative.relative)
             }
         }
+    }
+
+    // ------------------------------------------------------------- renaming
+
+    private fun resultFor(name: String, key: MusicalKey?, bpm: Float) =
+        FileAnalyzer.Result(name = name, key = key, bpm = bpm)
+
+    @Test
+    fun `proposes a name that keeps the original`() {
+        val result = resultFor("Loop_01.wav", MusicalKey(9, Mode.MINOR), 128f)
+        assertEquals("Loop_01 Am 128.wav", FolderScanner.proposedName("Loop_01.wav", result))
+    }
+
+    @Test
+    fun `does not stack suffixes on an already tagged file`() {
+        val result = resultFor("Loop_01 Am 128.wav", MusicalKey(9, Mode.MINOR), 128f)
+        assertEquals(null, FolderScanner.proposedName("Loop_01 Am 128.wav", result))
+    }
+
+    @Test
+    fun `leaves a file alone when there is no key to add`() {
+        val result = resultFor("Drums.wav", null, 120f)
+        assertEquals(null, FolderScanner.proposedName("Drums.wav", result))
+    }
+
+    @Test
+    fun `handles a missing tempo and a missing extension`() {
+        val noTempo = resultFor("Pad.wav", MusicalKey(0, Mode.MAJOR), 0f)
+        assertEquals("Pad C.wav", FolderScanner.proposedName("Pad.wav", noTempo))
+
+        val noExtension = resultFor("Pad", MusicalKey(0, Mode.MAJOR), 90f)
+        assertEquals("Pad C 90", FolderScanner.proposedName("Pad", noExtension))
     }
 
     // ------------------------------------------------------------- links

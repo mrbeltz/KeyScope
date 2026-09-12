@@ -77,10 +77,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // A tree grant is what allows renaming; the document picker only ever grants reads.
+                val folderPicker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocumentTree()
+                ) { treeUri ->
+                    if (treeUri != null) {
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(
+                                treeUri,
+                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            )
+                        }
+                        FileAnalysisController.analyzeFolder(context, treeUri, state.profile)
+                    }
+                }
+
                 // Saving also goes through the picker, which is what makes Drive a destination
                 // without the app needing a Google sign-in or any Drive API at all.
                 var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
                 var linkVideoId by remember { mutableStateOf<String?>(null) }
+                var renamePlan by remember {
+                    mutableStateOf<List<FileAnalysisController.RenamePlan>>(emptyList())
+                }
                 val writeResult: (android.net.Uri?) -> Unit = { uri ->
                     val bytes = pendingSave
                     pendingSave = null
@@ -213,6 +232,20 @@ class MainActivity : ComponentActivity() {
                             midiSaver.launch(Exports.baseName(result.name) + " chords.mid")
                         }
                     },
+                    pickFolder = { folderPicker.launch(null) },
+                    previewRenames = { renamePlan = FileAnalysisController.renamePlan() },
+                    applyRenames = {
+                        val plans = renamePlan
+                        renamePlan = emptyList()
+                        val renamed = FileAnalysisController.applyRenames(context, plans)
+                        Toast.makeText(
+                            context,
+                            if (renamed == plans.size) "Renamed $renamed"
+                            else "Renamed $renamed of ${plans.size}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    cancelRenames = { renamePlan = emptyList() },
                     playLink = { id ->
                         // The embed plays out loud and the mic reads it back, so anything else
                         // coming out of the speaker has to stop first.
@@ -277,6 +310,7 @@ class MainActivity : ComponentActivity() {
                     metronomeRunning = metronomeRunning,
                     files = files,
                     linkVideoId = linkVideoId,
+                    renamePlan = renamePlan,
                     actions = actions
                 )
             }
