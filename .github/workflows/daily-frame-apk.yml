@@ -31,7 +31,8 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest ships the Android SDK with licences accepted (ANDROID_HOME), and the
+      # Android Gradle plugin fetches the exact platform and build-tools it needs.
 
       - run: npm ci
       - run: npm test
