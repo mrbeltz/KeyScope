@@ -25,7 +25,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # The action's default package list still names the SDK's old `tools` package, which is no
+      # longer published, so sdkmanager fails before the build starts. The platform itself is
+      # fetched by the Android Gradle plugin as needed.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - uses: gradle/actions/setup-gradle@v4
         with:
