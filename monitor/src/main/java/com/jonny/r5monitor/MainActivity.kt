@@ -63,10 +63,10 @@ class MainActivity : ComponentActivity() {
                         scopes = { scopeState.value },
                         prefs = prefs,
                         actions = actions,
-                        onImmersive = ::setImmersive
+                        onImmersive = ::showFullScreen
                     )
                 } else {
-                    LaunchedEffect(Unit) { setImmersive(false) }
+                    LaunchedEffect(Unit) { showFullScreen(false) }
                     ConnectScreen(
                         state = state,
                         lastHost = prefs.lastHost,
@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setImmersive(on: Boolean) {
+    private fun showFullScreen(on: Boolean) {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         if (on) {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
