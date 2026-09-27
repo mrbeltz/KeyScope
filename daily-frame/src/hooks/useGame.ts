@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { arrangeChoices, decoyCandidates, pickDecoys } from '../lib/choices';
 import { dailyIndex } from '../lib/dailySeed';
 import { evaluateGuess, hasAlreadyGuessed, skipRecord } from '../lib/matching';
 import { keys, load, save } from '../lib/storage';
@@ -11,12 +12,18 @@ interface Options {
   mode: 'daily' | 'archive';
   pool: number[] | null;
   defaultHardMode: boolean;
+  defaultMultipleChoice: boolean;
   /** Fired once per guess, after it's been scored and saved. */
   onGuess?: (game: GameRecord, guess: GuessRecord) => void;
 }
 
-export function newGame(date: string, mode: GameRecord['mode'], pool: number[], hardMode: boolean): GameRecord {
-  return { date, mode, hardMode, answerId: pool[dailyIndex(date, pool.length)], guesses: [], status: 'playing' };
+export interface GameOptions {
+  hardMode: boolean;
+  multipleChoice: boolean;
+}
+
+export function newGame(date: string, mode: GameRecord['mode'], pool: number[], opts: GameOptions): GameRecord {
+  return { date, mode, ...opts, answerId: pool[dailyIndex(date, pool.length)], guesses: [], status: 'playing' };
 }
 
 export function applyGuess(game: GameRecord, guess: GuessRecord): GameRecord {
@@ -30,9 +37,10 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
 }
 
-export function useGame({ date, mode, pool, defaultHardMode, onGuess }: Options) {
+export function useGame({ date, mode, pool, defaultHardMode, defaultMultipleChoice, onGuess }: Options) {
   const [game, setGame] = useState<GameRecord | null>(null);
   const [answer, setAnswer] = useState<MovieFacts | null>(null);
+  const [choices, setChoices] = useState<MovieSuggestion[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -44,7 +52,7 @@ export function useGame({ date, mode, pool, defaultHardMode, onGuess }: Options)
     if (!pool || pool.length === 0) return;
     let record = load<GameRecord | null>(keys.game(date), null);
     if (!record || typeof record.answerId !== 'number') {
-      record = newGame(date, mode, pool, defaultHardMode);
+      record = newGame(date, mode, pool, { hardMode: defaultHardMode, multipleChoice: defaultMultipleChoice });
     } else if (mode === 'archive' && record.status === 'playing' && record.mode !== 'archive') {
       // An unfinished daily picked up later from the archive is a replay now; it can't
       // retroactively rescue a streak.
@@ -64,8 +72,25 @@ export function useGame({ date, mode, pool, defaultHardMode, onGuess }: Options)
         setError(navigator.onLine === false ? "You're offline and this frame isn't cached yet." : "Couldn't load the frame from TMDB.");
       });
     return () => ac.abort();
-    // defaultHardMode only seeds brand-new games; changing it mustn't reload the current one.
+    // The defaults only seed brand-new games; changing them mustn't reload the current one.
   }, [date, mode, pool, attempt]);
+
+  // Multiple choice: the answer plus three same-era decoys from the pool, fixed per date.
+  const wantsChoices = !!game?.multipleChoice;
+  useEffect(() => {
+    setChoices(null);
+    if (!wantsChoices || !answer || !pool) return;
+    let live = true;
+    const ids = decoyCandidates(date, pool, answer.id);
+    Promise.allSettled(ids.map((id) => fetchMovie(id))).then((results) => {
+      if (!live) return;
+      const candidates = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+      setChoices(arrangeChoices(date, answer, pickDecoys(answer, candidates)));
+    });
+    return () => {
+      live = false;
+    };
+  }, [wantsChoices, answer, pool, date]);
 
   const commit = useCallback((next: GameRecord, guess: GuessRecord) => {
     save(keys.game(next.date), next);
@@ -102,10 +127,11 @@ export function useGame({ date, mode, pool, defaultHardMode, onGuess }: Options)
     commit(applyGuess(game, record), record);
   }, [game, answer, commit]);
 
-  const setHardMode = useCallback(
-    (hardMode: boolean) => {
+  /** Hard mode and multiple choice can only change before the first guess. */
+  const setOptions = useCallback(
+    (opts: Partial<GameOptions>) => {
       if (!game || game.guesses.length > 0 || game.status !== 'playing') return;
-      const next = { ...game, hardMode };
+      const next = { ...game, ...opts };
       save(keys.game(next.date), next);
       setGame(next);
     },
@@ -114,5 +140,5 @@ export function useGame({ date, mode, pool, defaultHardMode, onGuess }: Options)
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
-  return { game, answer, error, busy, guess, skip, setHardMode, retry };
+  return { game, answer, choices, error, busy, guess, skip, setOptions, retry };
 }

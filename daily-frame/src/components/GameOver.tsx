@@ -10,9 +10,10 @@ interface Props {
   onShare: () => void;
   onStats: () => void;
   onBackToToday?: () => void;
+  onPrevDay?: () => void;
 }
 
-export function GameOver({ game, answer, shareNote, onShare, onStats, onBackToToday }: Props) {
+export function GameOver({ game, answer, shareNote, onShare, onStats, onBackToToday, onPrevDay }: Props) {
   const won = game.status === 'won';
   return (
     <section className="animate-pop glass neon-frame flex flex-col gap-3 rounded-xl p-4" aria-live="polite">
@@ -47,6 +48,11 @@ export function GameOver({ game, answer, shareNote, onShare, onStats, onBackToTo
         </button>
       </div>
       {shareNote && <p className="text-center text-sm text-amber" role="status">{shareNote}</p>}
+      {onPrevDay && (
+        <button type="button" className="btn btn-ghost normal-case" onClick={onPrevDay}>
+          ‹ Play the day before
+        </button>
+      )}
       {onBackToToday ? (
         <button type="button" className="btn btn-ghost" onClick={onBackToToday}>
           Back to today's frame

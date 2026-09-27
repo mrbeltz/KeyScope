@@ -5,9 +5,9 @@ interface Props {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   /** Whether the current game can still switch modes (no guesses yet). */
-  canChangeHardMode: boolean;
-  currentHardMode: boolean;
-  onHardModeNow: (on: boolean) => void;
+  canChangeOptions: boolean;
+  current: { hardMode: boolean; multipleChoice: boolean };
+  onOptionsNow: (patch: Partial<{ hardMode: boolean; multipleChoice: boolean }>) => void;
   poolSource: 'plex' | 'curated';
   poolSize: number;
   keySource: 'build' | 'device' | null;
@@ -15,21 +15,30 @@ interface Props {
   onClose: () => void;
 }
 
-export function SettingsModal({ settings, onChange, canChangeHardMode, currentHardMode, onHardModeNow, poolSource, poolSize, keySource, onForgetKey, onClose }: Props) {
+export function SettingsModal({ settings, onChange, canChangeOptions, current, onOptionsNow, poolSource, poolSize, keySource, onForgetKey, onClose }: Props) {
+  // Once a game has a guess in it, its mode is fixed; a change then applies from the next game.
+  const gameOption = (text: string, key: 'hardMode' | 'multipleChoice') =>
+    canChangeOptions ? text : `${text} This game is locked ${current[key] ? 'on' : 'off'}; the change applies from your next game.`;
+
   return (
     <Modal title="Settings" onClose={onClose}>
       <div className="flex flex-col divide-y divide-violet/20">
         <Toggle
+          label="Multiple choice"
+          description={gameOption('Pick from four options instead of typing a title.', 'multipleChoice')}
+          checked={canChangeOptions ? current.multipleChoice : settings.multipleChoice}
+          onChange={(v) => {
+            onChange({ multipleChoice: v });
+            if (canChangeOptions) onOptionsNow({ multipleChoice: v });
+          }}
+        />
+        <Toggle
           label="Hard mode"
-          description={
-            canChangeHardMode
-              ? 'No hints — the image is all you get.'
-              : `No hints — the image is all you get. Today's game is locked ${currentHardMode ? 'on' : 'off'}; this applies from your next game.`
-          }
-          checked={canChangeHardMode ? currentHardMode : settings.hardMode}
+          description={gameOption('No hints — the image is all you get.', 'hardMode')}
+          checked={canChangeOptions ? current.hardMode : settings.hardMode}
           onChange={(v) => {
             onChange({ hardMode: v });
-            if (canChangeHardMode) onHardModeNow(v);
+            if (canChangeOptions) onOptionsNow({ hardMode: v });
           }}
         />
         <Toggle label="Sound effects" description="Synth blips on right, close and wrong." checked={settings.sound} onChange={(v) => onChange({ sound: v })} />

@@ -4,9 +4,11 @@ import { FrameCanvas } from './components/FrameCanvas';
 import { GameOver } from './components/GameOver';
 import { GuessHistory } from './components/GuessHistory';
 import { GuessInput } from './components/GuessInput';
+import { DayNav } from './components/DayNav';
 import { Header } from './components/Header';
 import { HelpModal } from './components/HelpModal';
 import { HintList } from './components/HintList';
+import { MultipleChoice } from './components/MultipleChoice';
 import { SettingsModal } from './components/SettingsModal';
 import { SetupNotice } from './components/SetupNotice';
 import { StatsModal } from './components/StatsModal';
@@ -14,7 +16,8 @@ import { useGame } from './hooks/useGame';
 import { usePool } from './hooks/usePool';
 import { useSettings } from './hooks/useSettings';
 import { usePrefersReducedMotion, useToday } from './hooks/useToday';
-import { puzzleNumber } from './lib/dailySeed';
+import { LAUNCH_DATE, puzzleNumber } from './lib/dailySeed';
+import { addDays } from './lib/dates';
 import { cue } from './lib/feedback';
 import { buildHints } from './lib/hints';
 import { isNative } from './lib/native';
@@ -61,13 +64,19 @@ export default function App() {
     }
   }, []);
 
-  const { game, answer, error, busy, guess, skip, setHardMode, retry } = useGame({
+  const { game, answer, choices, error, busy, guess, skip, setOptions, retry } = useGame({
     date: view.date,
     mode: view.mode,
     pool: pool?.ids ?? null,
     defaultHardMode: settings.hardMode,
+    defaultMultipleChoice: settings.multipleChoice,
     onGuess,
   });
+
+  /** Today plays as the daily; any earlier date is an archive replay. */
+  const goTo = useCallback((date: string) => setView({ date, mode: date === today ? 'daily' : 'archive' }), [today]);
+  const prevDate = view.date > LAUNCH_DATE ? addDays(view.date, -1) : null;
+  const nextDate = view.date < today ? addDays(view.date, 1) : null;
 
   // Local midnight: move to the new puzzle, unless the player is mid-game on yesterday's —
   // then let them finish and offer the new one.
@@ -102,7 +111,8 @@ export default function App() {
     setShareNote(outcome === 'copied' ? 'Copied to clipboard!' : outcome === 'failed' ? "Couldn't share — try a screenshot." : null);
   }, [game, stats.currentStreak]);
 
-  const subtitle = view.mode === 'archive' ? `Archive · #${number}` : `#${number} · ${formatToday(view.date)}`;
+  const navLabel = view.mode === 'daily' ? `Today · #${number}` : `#${number}`;
+  const navDetail = view.mode === 'daily' ? formatToday(view.date) : `${formatToday(view.date)} · replay`;
 
   return (
     <>
@@ -110,11 +120,17 @@ export default function App() {
       <main className="shell">
         <section className="pane stage-pane" aria-label="Frame">
           <Header
-            subtitle={subtitle}
             onHelp={() => setModal('help')}
             onArchive={() => setModal('archive')}
             onStats={() => setModal('stats')}
             onSettings={() => setModal('settings')}
+          />
+          <DayNav
+            label={navLabel}
+            detail={navDetail}
+            onPrev={prevDate ? () => goTo(prevDate) : null}
+            onNext={nextDate ? () => goTo(nextDate) : null}
+            onPick={() => setModal('archive')}
           />
           {rolledOver && (
             <button type="button" className="btn btn-ghost flex-hide w-full normal-case" onClick={() => setView({ date: today, mode: 'daily' })}>
@@ -164,7 +180,18 @@ export default function App() {
                     shareNote={shareNote}
                     onShare={onShare}
                     onStats={() => setModal('stats')}
-                    onBackToToday={view.mode === 'archive' ? () => setView({ date: today, mode: 'daily' }) : undefined}
+                    onBackToToday={view.mode === 'archive' ? () => goTo(today) : undefined}
+                    onPrevDay={prevDate ? () => goTo(prevDate) : undefined}
+                  />
+                ) : game?.multipleChoice ? (
+                  <MultipleChoice
+                    choices={choices}
+                    guesses={game.guesses}
+                    disabled={!answer || finished}
+                    busy={busy}
+                    guessesLeft={MAX_GUESSES - game.guesses.length}
+                    onGuess={guess}
+                    onSkip={skip}
                   />
                 ) : (
                   <GuessInput
@@ -194,9 +221,9 @@ export default function App() {
         <SettingsModal
           settings={settings}
           onChange={updateSettings}
-          canChangeHardMode={!!game && game.status === 'playing' && game.guesses.length === 0}
-          currentHardMode={game?.hardMode ?? settings.hardMode}
-          onHardModeNow={setHardMode}
+          canChangeOptions={!!game && game.status === 'playing' && game.guesses.length === 0}
+          current={{ hardMode: game?.hardMode ?? settings.hardMode, multipleChoice: game?.multipleChoice ?? settings.multipleChoice }}
+          onOptionsNow={setOptions}
           poolSource={pool?.source ?? 'curated'}
           poolSize={pool?.ids.length ?? 0}
           keySource={hasKey ? tmdbKeySource() : null}
@@ -212,7 +239,7 @@ export default function App() {
         <ArchiveModal
           today={today}
           onPick={(date) => {
-            setView({ date, mode: 'archive' });
+            goTo(date);
             setModal(null);
           }}
           onClose={closeModal}

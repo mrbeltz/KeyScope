@@ -47,6 +47,8 @@ export interface GameRecord {
    */
   answerId: number;
   hardMode: boolean;
+  /** Pick from four options instead of searching. Missing on games saved before it existed. */
+  multipleChoice?: boolean;
   guesses: GuessRecord[];
   status: GameStatus;
 }

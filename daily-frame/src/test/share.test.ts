@@ -38,3 +38,10 @@ describe('share text', () => {
     expect(t).not.toContain('C');
   });
 });
+
+describe('multiple choice share text', () => {
+  it('says the game was multiple choice', () => {
+    const t = shareText({ puzzleNumber: 3, game: game([hit], 'won', { multipleChoice: true }), streak: 2 });
+    expect(t.split('\n')[0]).toBe('Daily Frame #3 🎬 1/6 (multiple choice)');
+  });
+});

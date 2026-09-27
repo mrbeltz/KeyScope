@@ -19,7 +19,7 @@ export function shareText(opts: {
 }): string {
   const { puzzleNumber, game, streak, url } = opts;
   const score = game.status === 'won' ? `${game.guesses.length}/${MAX_GUESSES}` : `X/${MAX_GUESSES}`;
-  const flags = game.hardMode ? '*' : '';
+  const flags = (game.hardMode ? '*' : '') + (game.multipleChoice ? ' (multiple choice)' : '');
   const lines = [`Daily Frame #${puzzleNumber} 🎬 ${score}${flags}`, resultSquares(game)];
   if (game.mode === 'daily') lines.push(`🔥 Streak: ${streak}`);
   else lines.push('🗄️ Archive replay');

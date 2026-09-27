@@ -122,14 +122,24 @@ export function toFacts(d: RawDetails): MovieFacts {
   };
 }
 
-/** Full facts for a movie: details, credits and its textless backdrops in one request. */
-export async function fetchMovie(id: number, signal?: AbortSignal): Promise<MovieFacts> {
-  const raw = await get<RawDetails>(
+const movieCache = new Map<number, Promise<MovieFacts>>();
+
+/**
+ * Full facts for a movie: details, credits and its textless backdrops in one request.
+ * Kept in memory for the session, so the answer, the multiple-choice options and a guess of
+ * one of those options never fetch the same movie twice.
+ */
+export function fetchMovie(id: number, signal?: AbortSignal): Promise<MovieFacts> {
+  const cached = movieCache.get(id);
+  if (cached) return cached;
+  const request = get<RawDetails>(
     `/movie/${id}`,
     { append_to_response: 'credits,images', include_image_language: 'null,xx', language: 'en-US' },
     signal,
-  );
-  return toFacts(raw);
+  ).then(toFacts);
+  movieCache.set(id, request);
+  request.catch(() => movieCache.delete(id));
+  return request;
 }
 
 interface RawSearch {

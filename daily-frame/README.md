@@ -19,7 +19,11 @@ or skip sharpens the image and unlocks a hint. You get six guesses, and a win ke
 | 4      | Near-clear                | Director      |
 | 5      | Clear                     | Tagline       |
 
-- **Guessing.** Type into the search box and pick a movie from the suggestions. Only suggestions
+- **Multiple choice (on by default).** Pick from four options: the answer plus three decoys
+  drawn from the pool and matched to the answer's era, the same four for everyone on a given
+  day. A wrong pick is crossed out and costs a guess. Turn it off in Settings to type titles
+  instead. Like hard mode, it's fixed for a game once you've guessed.
+- **Guessing by typing.** Type into the search box and pick a movie from the suggestions. Only suggestions
   can be submitted. Guesses are matched on the TMDB ID, so any title TMDB's search knows the
   movie by is accepted: the English title, the original title, or an alternate title. A remake
   with the same name is a different ID, so it doesn't count.
@@ -27,7 +31,9 @@ or skip sharpens the image and unlocks a hint. You get six guesses, and a win ke
   with the answer.
 - **Skip.** Uses up a guess.
 - **Hard mode.** No hints, only the image. Turn it on in Settings before your first guess.
-- **Archive.** Replay any past day. Archive games never change your stats or streak.
+- **Previous days.** The ‹ › arrows under the title step back through every earlier frame one
+  day at a time, and a finished game offers "Play the day before". Tapping the date between the
+  arrows opens the full archive. Replays never change your stats or streak.
 - **Extras.** Haptic feedback (on by default), synth sound effects (off by default), and a
   countdown to the next puzzle.
 
