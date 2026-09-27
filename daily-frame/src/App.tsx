@@ -17,11 +17,12 @@ import { usePrefersReducedMotion, useToday } from './hooks/useToday';
 import { puzzleNumber } from './lib/dailySeed';
 import { cue } from './lib/feedback';
 import { buildHints } from './lib/hints';
+import { isNative } from './lib/native';
 import { stageFor } from './lib/reveal';
 import { shareResult, shareText } from './lib/share';
 import { type DailyHistory, computeStats, recordResult } from './lib/stats';
 import { keys, load, save } from './lib/storage';
-import { hasTmdbKey, imageUrl } from './lib/tmdb';
+import { forgetTmdbKey, hasTmdbKey, imageUrl, tmdbKeySource } from './lib/tmdb';
 import type { GameRecord, GuessRecord } from './lib/types';
 import { MAX_GUESSES } from './lib/types';
 
@@ -38,6 +39,7 @@ export default function App() {
   const stats = useMemo(() => computeStats(history, today), [history, today]);
   const [modal, setModal] = useState<ModalName>(() => (load(keys.seenHelp, false) ? null : 'help'));
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const [hasKey, setHasKey] = useState(hasTmdbKey);
   const statsTimer = useRef<number | undefined>(undefined);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -95,7 +97,7 @@ export default function App() {
 
   const onShare = useCallback(async () => {
     if (!game) return;
-    const text = shareText({ puzzleNumber: puzzleNumber(game.date), game, streak: stats.currentStreak, url: location.origin });
+    const text = shareText({ puzzleNumber: puzzleNumber(game.date), game, streak: stats.currentStreak, url: isNative ? undefined : location.origin });
     const outcome = await shareResult(text);
     setShareNote(outcome === 'copied' ? 'Copied to clipboard!' : outcome === 'failed' ? "Couldn't share — try a screenshot." : null);
   }, [game, stats.currentStreak]);
@@ -119,7 +121,7 @@ export default function App() {
               ✨ Today's frame is ready — play it
             </button>
           )}
-          {hasTmdbKey && (
+          {hasKey && (
             <div className="frame-area">
               <FrameCanvas
                 src={answer?.backdropPath ? imageUrl(answer.backdropPath, 'w1280') : null}
@@ -130,7 +132,7 @@ export default function App() {
               />
             </div>
           )}
-          {game && hasTmdbKey && !error && (
+          {game && hasKey && !error && (
             <div className="history-under-frame">
               <GuessHistory guesses={game.guesses} />
             </div>
@@ -138,8 +140,13 @@ export default function App() {
         </section>
 
         <section className="pane control-pane" aria-label="Guesses and hints">
-          {!hasTmdbKey ? (
-            <SetupNotice />
+          {!hasKey ? (
+            <SetupNotice
+              onSaved={() => {
+                setHasKey(true);
+                retry();
+              }}
+            />
           ) : error ? (
             <div className="area-input glass rounded-xl border border-pink/50 p-4 text-center">
               <p className="mb-3">{error}</p>
@@ -192,6 +199,12 @@ export default function App() {
           onHardModeNow={setHardMode}
           poolSource={pool?.source ?? 'curated'}
           poolSize={pool?.ids.length ?? 0}
+          keySource={hasKey ? tmdbKeySource() : null}
+          onForgetKey={() => {
+            forgetTmdbKey();
+            setHasKey(false);
+            setModal(null);
+          }}
           onClose={closeModal}
         />
       )}

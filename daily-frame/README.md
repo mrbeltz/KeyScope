@@ -197,6 +197,34 @@ Or from the CLI: `cd daily-frame && npx vercel --prod`.
 Both configs serve `sw.js` with `Cache-Control: no-cache`, so new versions roll out promptly.
 The service worker is set to `autoUpdate`.
 
+## Android APK
+
+The repo builds a real Android app too. It wraps the same web build with
+[Capacitor](https://capacitorjs.com) (`capacitor.config.ts`, `android/`).
+
+**Download it:** every push that touches `daily-frame/` runs the **Daily Frame APK** workflow
+(`.github/workflows/daily-frame-apk.yml`). The workflow attaches `daily-frame.apk` to the
+**Daily Frame (Android)** release, tagged `daily-frame-latest`, on the repo's Releases page.
+
+1. Open the Releases page on your phone and download `daily-frame.apk`.
+2. Open it. The first time, Android asks you to allow installs from your browser: tap
+   **Settings → Allow from this source**, then go back and tap **Install**.
+3. The first time the app opens, paste your TMDB key (see above). It stays on the phone.
+   To bake a key into the APK instead, add a repository secret named `TMDB_API_KEY`
+   (**Settings → Secrets and variables → Actions**). Only do that if the repo is private,
+   since anyone who downloads the APK can read a key that's baked into it.
+
+Builds are signed with a fixed debug key (`android/app/debug.keystore`, committed on
+purpose), so a new APK installs over the old one and keeps your streak and stats. It's a
+debug build meant for your own phones, not the Play Store.
+
+To build it yourself you need Android Studio (or JDK 21 and the Android SDK):
+
+```bash
+npm run build && npx cap sync android
+cd android && ./gradlew assembleDebug   # → android/app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## Install on an Android home screen
 
 1. Open the deployed HTTPS URL in **Chrome** on the Fold (Samsung Internet works too).

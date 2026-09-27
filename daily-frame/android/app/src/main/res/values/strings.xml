@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Daily Frame</string>
+    <string name="title_activity_main">Daily Frame</string>
+    <string name="package_name">com.mrbeltz.dailyframe</string>
+    <string name="custom_url_scheme">com.mrbeltz.dailyframe</string>
+</resources>

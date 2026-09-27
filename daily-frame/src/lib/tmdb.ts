@@ -1,11 +1,37 @@
+import { keys, load, save } from './storage';
 import type { MovieFacts, MovieSuggestion } from './types';
 
 const API = 'https://api.themoviedb.org/3';
 const IMAGES = 'https://image.tmdb.org/t/p';
 
-const KEY = (import.meta.env.VITE_TMDB_API_KEY ?? '').trim();
+const BUILD_KEY = (import.meta.env.VITE_TMDB_API_KEY ?? '').trim();
 
-export const hasTmdbKey = KEY.length > 0;
+/**
+ * The key baked in at build time wins; otherwise one the player pasted into the app, which
+ * is how the APK works without the key ever being in the repo or the release.
+ */
+function currentKey(): string {
+  return BUILD_KEY || load<string>(keys.tmdbKey, '').trim();
+}
+
+export const hasTmdbKey = (): boolean => currentKey().length > 0;
+export const tmdbKeySource = (): 'build' | 'device' | null => (BUILD_KEY ? 'build' : currentKey() ? 'device' : null);
+
+/** Checks a pasted key against TMDB, and keeps it on the device if it works. */
+export async function saveTmdbKey(key: string): Promise<'ok' | 'invalid' | 'offline'> {
+  const k = key.trim();
+  try {
+    await request('/configuration', {}, undefined, k);
+  } catch (err) {
+    return err instanceof TmdbError && (err.status === 401 || err.status === 404) ? 'invalid' : 'offline';
+  }
+  save(keys.tmdbKey, k);
+  return 'ok';
+}
+
+export function forgetTmdbKey(): void {
+  save(keys.tmdbKey, '');
+}
 
 export class TmdbError extends Error {
   constructor(
@@ -17,8 +43,12 @@ export class TmdbError extends Error {
 }
 
 /** Accepts either a v3 API key (query param) or a v4 read access token (Bearer header). */
-async function get<T>(path: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
-  if (!hasTmdbKey) throw new TmdbError('No TMDB API key configured');
+function get<T>(path: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, params, signal, currentKey());
+}
+
+async function request<T>(path: string, params: Record<string, string>, signal: AbortSignal | undefined, KEY: string): Promise<T> {
+  if (!KEY) throw new TmdbError('No TMDB API key configured');
   const url = new URL(API + path);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   const headers: HeadersInit = { accept: 'application/json' };

@@ -1,3 +1,4 @@
+import { isNative } from './native';
 import type { GameRecord } from './types';
 import { MAX_GUESSES } from './types';
 
@@ -28,8 +29,18 @@ export function shareText(opts: {
 
 export type ShareOutcome = 'shared' | 'copied' | 'failed';
 
-/** Web Share API where there is one (Android), clipboard otherwise. */
+/** The Android share sheet in the app, the Web Share API in a browser, clipboard otherwise. */
 export async function shareResult(text: string): Promise<ShareOutcome> {
+  if (isNative) {
+    try {
+      const { Share } = await import('@capacitor/share');
+      await Share.share({ text, dialogTitle: 'Share your Daily Frame' });
+      return 'shared';
+    } catch (err) {
+      // Dismissing the sheet rejects too; treat that as done rather than falling back.
+      if (String(err).toLowerCase().includes('cancel')) return 'shared';
+    }
+  }
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
       await navigator.share({ text });

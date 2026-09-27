@@ -1,0 +1,71 @@
+name: Daily Frame APK
+
+# Builds the Android app and attaches it to the "daily-frame-latest" release, so the phone
+# can download it straight from the repo's Releases page.
+on:
+  push:
+    branches: [main, claude/daily-frame-pwa-t8iifa]
+    paths: ['daily-frame/**', '.github/workflows/daily-frame-apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: daily-frame
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: daily-frame/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+      - run: npm test
+
+      # The TMDB key is optional. Without the TMDB_API_KEY secret the app asks for a key the
+      # first time it opens and keeps it on the phone.
+      - name: Build the web app
+        run: npm run build
+        env:
+          VITE_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+
+      - run: npx cap sync android
+
+      - name: Build the APK
+        working-directory: daily-frame/android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: daily-frame-apk
+          path: daily-frame/android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish to the daily-frame-latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk daily-frame.apk
+          gh release delete daily-frame-latest --yes --cleanup-tag || true
+          gh release create daily-frame-latest daily-frame.apk \
+            --target "${{ github.sha }}" \
+            --title "Daily Frame (Android)" \
+            --notes "Build ${{ github.run_number }} from ${{ github.ref_name }} @ ${{ github.sha }}. Download daily-frame.apk on your phone and open it to install." \
+            --latest=false

@@ -26,4 +26,5 @@ export const keys = {
   history: 'history',
   settings: 'settings',
   seenHelp: 'seen-help',
+  tmdbKey: 'tmdb-key',
 };

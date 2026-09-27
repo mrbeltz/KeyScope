@@ -10,10 +10,12 @@ interface Props {
   onHardModeNow: (on: boolean) => void;
   poolSource: 'plex' | 'curated';
   poolSize: number;
+  keySource: 'build' | 'device' | null;
+  onForgetKey: () => void;
   onClose: () => void;
 }
 
-export function SettingsModal({ settings, onChange, canChangeHardMode, currentHardMode, onHardModeNow, poolSource, poolSize, onClose }: Props) {
+export function SettingsModal({ settings, onChange, canChangeHardMode, currentHardMode, onHardModeNow, poolSource, poolSize, keySource, onForgetKey, onClose }: Props) {
   return (
     <Modal title="Settings" onClose={onClose}>
       <div className="flex flex-col divide-y divide-violet/20">
@@ -42,6 +44,11 @@ export function SettingsModal({ settings, onChange, canChangeHardMode, currentHa
       <p className="mt-4 text-xs text-mist/60">
         Puzzle pool: {poolSize} movies from {poolSource === 'plex' ? 'your Plex library' : 'the curated list'}.
       </p>
+      {keySource === 'device' && (
+        <button type="button" className="btn btn-ghost mt-3 w-full normal-case" onClick={onForgetKey}>
+          Change TMDB key
+        </button>
+      )}
     </Modal>
   );
 }
