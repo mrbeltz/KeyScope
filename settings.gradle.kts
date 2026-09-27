@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "KeyScope"
 include(":app")
+include(":monitor")

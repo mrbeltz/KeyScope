@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CCAPI speaks plain HTTP on port 8080 and the camera has no certificate a phone would trust, so
+  cleartext has to be allowed. The app only ever talks to the camera on the local network.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

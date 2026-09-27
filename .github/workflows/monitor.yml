@@ -1,0 +1,61 @@
+name: Build R5 Monitor APK
+
+# Runs on every branch that touches the monitor, so a work branch gets a downloadable APK from the
+# run's artifacts before it is merged. Only main publishes to the release page.
+on:
+  push:
+    paths:
+      - 'monitor/**'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - '.github/workflows/monitor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build debug APK
+        run: gradle :monitor:assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r5-monitor-debug-apk
+          path: monitor/build/outputs/apk/debug/monitor-debug.apk
+
+      - name: Publish to the monitor-latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp monitor/build/outputs/apk/debug/monitor-debug.apk r5-monitor-debug.apk
+          gh release delete monitor-latest --yes --cleanup-tag || true
+          gh release create monitor-latest r5-monitor-debug.apk \
+            --title "R5 Monitor debug build" \
+            --notes "Built from ${{ github.sha }}."
+
+      - name: Run unit tests
+        run: gradle :monitor:testDebugUnitTest --no-daemon
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-test-reports
+          path: monitor/build/reports/tests/
