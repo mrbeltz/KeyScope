@@ -1,0 +1,321 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-night: #0b0420;
+  --color-navy: #150b3a;
+  --color-plum: #2a0f55;
+  --color-pink: #ff2a6d;
+  --color-cyan: #05d9e8;
+  --color-violet: #b967ff;
+  --color-amber: #f9c80e;
+  --color-mist: #d7cdf5;
+  --font-display: 'Monoton', 'Share Tech Mono', ui-monospace, monospace;
+  --font-mono: 'Share Tech Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --animate-flicker: flicker 5s infinite;
+  --animate-pop: pop 0.35s ease-out both;
+  --animate-shake: shake 0.4s ease-in-out both;
+}
+
+@keyframes flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% { opacity: 1; }
+  20%, 24%, 55% { opacity: 0.55; }
+}
+@keyframes pop {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+@keyframes grid-scroll {
+  from { background-position: 0 0; }
+  to { background-position: 0 48px; }
+}
+
+:root {
+  color-scheme: dark;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --tap: 44px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-night);
+  color: var(--color-mist);
+  font-family: var(--font-mono);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* ---------- Synthwave backdrop: sky gradient, sun, perspective grid ---------- */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 80% 45% at 50% 62%, rgb(255 42 109 / 0.28), transparent 70%),
+    linear-gradient(180deg, #0b0420 0%, #1a0b46 52%, #2a0f55 62%, #0b0420 100%);
+}
+.backdrop::before {
+  /* The sun, striped at the bottom like an 80s record sleeve. */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  width: min(58vmin, 420px);
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f9c80e 0%, #ff6c3a 45%, #ff2a6d 75%);
+  mask: repeating-linear-gradient(180deg, #000 0 14px, transparent 14px 18px) bottom / 100% 45% no-repeat,
+    linear-gradient(#000, #000) top / 100% 55% no-repeat;
+  opacity: 0.22;
+  filter: blur(1px);
+}
+.backdrop::after {
+  content: '';
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: 42%;
+  background-image:
+    linear-gradient(rgb(5 217 232 / 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(185 103 255 / 0.3) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(300px) rotateX(62deg);
+  transform-origin: top center;
+  mask-image: linear-gradient(to bottom, transparent, #000 35%);
+  animation: grid-scroll 3s linear infinite;
+}
+
+.logo {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: #fff0fb;
+  text-shadow:
+    0 0 4px #fff,
+    0 0 10px var(--color-pink),
+    0 0 22px var(--color-pink),
+    0 0 42px var(--color-violet);
+}
+
+.neon-frame {
+  border: 1px solid rgb(5 217 232 / 0.55);
+  box-shadow:
+    0 0 0 1px rgb(255 42 109 / 0.25),
+    0 0 18px rgb(5 217 232 / 0.25),
+    inset 0 0 24px rgb(5 217 232 / 0.08);
+}
+
+.glass {
+  background: rgb(21 11 58 / 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.btn {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.6rem;
+  padding: 0 1rem;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background-color 0.2s ease, opacity 0.2s;
+  touch-action: manipulation;
+}
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:focus-visible, .field:focus-visible, .option:focus-visible {
+  outline: 2px solid var(--color-cyan);
+  outline-offset: 2px;
+}
+.btn-primary {
+  background: linear-gradient(90deg, var(--color-pink), #d300c5);
+  color: #fff;
+  box-shadow: 0 0 14px rgb(255 42 109 / 0.55);
+}
+.btn-ghost {
+  background: rgb(5 217 232 / 0.08);
+  color: var(--color-cyan);
+  border: 1px solid rgb(5 217 232 / 0.5);
+}
+.icon-btn {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  display: inline-grid;
+  place-items: center;
+  border-radius: 0.6rem;
+  color: var(--color-cyan);
+}
+.icon-btn:hover { background: rgb(5 217 232 / 0.1); }
+.icon-btn:focus-visible { outline: 2px solid var(--color-cyan); }
+
+/* ---------- Layout ----------
+ * Folded (<600px): one scrolling column — header, frame, then the controls.
+ * Unfolded (>=600px): two panes side by side; each scrolls on its own.
+ * Flex Mode (two stacked viewport segments): frame in the top segment, controls in the
+ * bottom one, and the rows are sized from env(viewport-segment-*) so nothing sits on the hinge.
+ */
+
+.shell {
+  min-height: 100%;
+  padding: var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+  display: flex;
+  flex-direction: column;
+}
+.pane {
+  padding: 0.75rem 1rem;
+  min-width: 0;
+}
+.stage-pane { display: flex; flex-direction: column; gap: 0.75rem; }
+.control-pane { display: flex; flex-direction: column; gap: 1rem; padding-bottom: 1.5rem; }
+.frame-area { display: flex; flex-direction: column; }
+.frame-box { width: 100%; aspect-ratio: 16 / 9; }
+.history-under-frame { display: none; }
+
+@media (min-width: 600px) {
+  .shell {
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, 1fr);
+    column-gap: 0.5rem;
+  }
+  .pane { overflow-y: auto; overscroll-behavior: contain; padding: 1rem 1.25rem; }
+  /* The left pane has room under the frame: the guess history moves there. */
+  .history-under-frame { display: block; }
+  .control-pane > .area-history { display: none; }
+}
+
+/* Wide but short (landscape phone): keep the frame from outgrowing the pane. */
+@media (min-width: 600px) and (max-height: 520px) {
+  .frame-box { width: auto; height: min(56dvh, 100%); margin-inline: auto; }
+}
+
+/* Flex Mode: the Fold half-open like a laptop — two segments stacked vertically. */
+@media (vertical-viewport-segments: 2) {
+  .shell {
+    height: 100dvh;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: env(viewport-segment-height 0 0) env(viewport-segment-height 0 1);
+    row-gap: calc(env(viewport-segment-top 0 1) - env(viewport-segment-bottom 0 0));
+  }
+  .pane { overflow-y: auto; padding-inline: max(1rem, var(--safe-l)) max(1rem, var(--safe-r)); }
+  .stage-pane {
+    padding-top: max(0.5rem, var(--safe-t));
+    padding-bottom: 0.5rem;
+    overflow: hidden;
+  }
+  /* The frame takes whatever height the top segment has left, at 16:9. */
+  .frame-area { flex: 1 1 auto; min-height: 0; padding-bottom: 0; }
+  .frame-box { flex: 1 1 auto; min-height: 0; width: auto; height: 100%; max-width: 100%; margin-inline: auto; }
+  .control-pane {
+    padding-bottom: max(1rem, var(--safe-b));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-content: start;
+    gap: 0.75rem 1.25rem;
+  }
+  .control-pane > * { grid-column: 1 / -1; }
+  .control-pane > .area-input { grid-column: 1; grid-row: 1; }
+  .control-pane > .area-history { grid-column: 1; grid-row: 2; }
+  .control-pane > .area-hints { grid-column: 2; grid-row: 1 / span 2; }
+  .flex-hide, .history-under-frame { display: none; }
+  .control-pane > .area-history { display: block; }
+  .modal-root {
+    top: env(viewport-segment-top 0 1) !important;
+    height: env(viewport-segment-height 0 1) !important;
+  }
+}
+
+/* A book-style fold (segments side by side): one pane per segment, the hinge in the gap. */
+@media (horizontal-viewport-segments: 2) {
+  .shell {
+    height: 100dvh;
+    padding: 0;
+    display: grid;
+    grid-template-columns: env(viewport-segment-width 0 0) env(viewport-segment-width 1 0);
+    column-gap: calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0));
+  }
+  .pane { overflow-y: auto; }
+}
+
+/* ---------- Pieces ---------- */
+
+.field {
+  min-height: var(--tap);
+  width: 100%;
+  border-radius: 0.6rem;
+  background: rgb(11 4 32 / 0.85);
+  border: 1px solid rgb(185 103 255 / 0.55);
+  color: #fff;
+  padding: 0 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+}
+.field::placeholder { color: rgb(215 205 245 / 0.45); }
+
+.option {
+  min-height: var(--tap);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.9rem;
+  text-align: left;
+}
+.option[aria-selected='true'] { background: rgb(255 42 109 / 0.2); color: #fff; }
+.option:disabled { opacity: 0.4; }
+
+.frame-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 0.6rem;
+  background: #06021a;
+}
+.frame-scanlines {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 0.6rem;
+  background: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.16) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
+
+.dist-bar {
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .backdrop::after { animation: none; }
+  .logo { animation: none; }
+}

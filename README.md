@@ -207,3 +207,8 @@ app/src/main/java/com/jonny/keyscope/
   ui/                        Compose screen and theme
 app/src/test/java/com/jonny/keyscope/DspTest.kt
 ```
+
+## Also in this repo
+
+[`daily-frame/`](daily-frame/) is **Daily Frame**, a separate daily movie-still guessing game.
+It's an installable web app laid out for the same Fold. Its own README covers setup and deploying.

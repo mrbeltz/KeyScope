@@ -1,0 +1,71 @@
+import type { Settings } from '../hooks/useSettings';
+import { Modal } from './Modal';
+
+interface Props {
+  settings: Settings;
+  onChange: (patch: Partial<Settings>) => void;
+  /** Whether the current game can still switch modes (no guesses yet). */
+  canChangeHardMode: boolean;
+  currentHardMode: boolean;
+  onHardModeNow: (on: boolean) => void;
+  poolSource: 'plex' | 'curated';
+  poolSize: number;
+  onClose: () => void;
+}
+
+export function SettingsModal({ settings, onChange, canChangeHardMode, currentHardMode, onHardModeNow, poolSource, poolSize, onClose }: Props) {
+  return (
+    <Modal title="Settings" onClose={onClose}>
+      <div className="flex flex-col divide-y divide-violet/20">
+        <Toggle
+          label="Hard mode"
+          description={
+            canChangeHardMode
+              ? 'No hints — the image is all you get.'
+              : `No hints — the image is all you get. Today's game is locked ${currentHardMode ? 'on' : 'off'}; this applies from your next game.`
+          }
+          checked={canChangeHardMode ? currentHardMode : settings.hardMode}
+          onChange={(v) => {
+            onChange({ hardMode: v });
+            if (canChangeHardMode) onHardModeNow(v);
+          }}
+        />
+        <Toggle label="Sound effects" description="Synth blips on right, close and wrong." checked={settings.sound} onChange={(v) => onChange({ sound: v })} />
+        <Toggle
+          label="Haptics"
+          description="Vibrate on right and wrong answers."
+          checked={settings.haptics}
+          onChange={(v) => onChange({ haptics: v })}
+          disabled={typeof navigator !== 'undefined' && !('vibrate' in navigator)}
+        />
+      </div>
+      <p className="mt-4 text-xs text-mist/60">
+        Puzzle pool: {poolSize} movies from {poolSource === 'plex' ? 'your Plex library' : 'the curated list'}.
+      </p>
+    </Modal>
+  );
+}
+
+function Toggle(props: { label: string; description: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  const { label, description, checked, onChange, disabled } = props;
+  return (
+    <label className={`flex min-h-14 cursor-pointer items-center justify-between gap-4 py-3 ${disabled ? 'opacity-40' : ''}`}>
+      <span>
+        <span className="block text-white">{label}</span>
+        <span className="block text-xs text-mist/65">{description}</span>
+      </span>
+      <span className="relative inline-flex h-11 w-16 shrink-0 items-center">
+        <input
+          type="checkbox"
+          role="switch"
+          className="peer absolute inset-0 cursor-pointer opacity-0"
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <span className="pointer-events-none h-7 w-14 rounded-full border border-violet/60 bg-night transition-colors peer-checked:border-pink peer-checked:bg-pink/40 peer-focus-visible:outline-2 peer-focus-visible:outline-cyan" />
+        <span className="pointer-events-none absolute left-1.5 h-5 w-5 rounded-full bg-mist transition-transform peer-checked:translate-x-7 peer-checked:bg-white peer-checked:shadow-[0_0_10px_#ff2a6d]" />
+      </span>
+    </label>
+  );
+}
